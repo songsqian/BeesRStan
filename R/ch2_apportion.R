@@ -27,17 +27,20 @@ niters <- 5000 #50000
 nkeep <- 2500
 nthin <- ceiling((niters/2)*nchains/nkeep)
 
-## data
-## 1. hydro-acoustic data
-data <- read.csv(paste(dataDIR, "HA_targ_18.csv", sep="/"),
-                 header=T, sep=",")
-data <- subset(data, Grid == 4)
+## ## data
+## ## 1. hydro-acoustic data Data file is too big for GitHub
+## data <- read.csv(paste(dataDIR, "HA_targ_18.csv", sep="/"),
+##                  header=T, sep=",")
+## data <- subset(data, Grid == 4)
 
-data <- data[order(data$Grid,data$Region_name),]
-head(data)
-dim(data)
+## data <- data[order(data$Grid,data$Region_name),]
+## head(data)
+## dim(data)
 
+## save(data, file="Ch2_HAtarg.RData")
 ## preparing data
+
+load("Ch2_HAtag.RData")
 y <- log10(data$BS)
 par(mfrow=c(1,2))
 hist(log10(data$BS))

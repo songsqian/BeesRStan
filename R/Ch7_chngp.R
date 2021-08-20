@@ -18,19 +18,22 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 
 ## Nuese River TP time series -- change point example
 ### Reading and processing data
+## The data file is too big for GitHub
+## upper.neuse <- read.table(paste(dataDIR,
+##                                 "Data_upp_20080509_220930_RegResults.txt",
+##                                 sep="/"),
+##                           sep="~", header=T)
 
-upper.neuse <- read.table(paste(dataDIR,
-                                "Data_upp_20080509_220930_RegResults.txt",
-                                sep="/"),
-                          sep="~", header=T)
+## J417 <- upper.neuse[upper.neuse$Station.ID=="J4170000       " , ]
 
-J417 <- upper.neuse[upper.neuse$Station.ID=="J4170000       " , ]
+## J417.TP <- J417[J417$Character=="Phosphorus as P",]
+## J417.TP$Date <- as.Date(J417.TP$Activity.Start,
+##                         format="%Y-%m-%d %H:%M:%S")
+## names(J417.TP)[24] <- "Value"
 
-J417.TP <- J417[J417$Character=="Phosphorus as P",]
-J417.TP$Date <- as.Date(J417.TP$Activity.Start,
-                        format="%Y-%m-%d %H:%M:%S")
-names(J417.TP)[24] <- "Value"
+## save(J417.TP, file="Ch7_neuse.RData")
 
+load("Ch7_neuse.RData")
 plot(Value ~ Date, data=J417.TP)
 
 ## calculating monthly means
