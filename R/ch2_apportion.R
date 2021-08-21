@@ -40,7 +40,7 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 ## save(data, file="Ch2_HAtarg.RData")
 ## preparing data
 
-load("Ch2_HAtag.RData")
+load("Ch2_HAtarg.RData")
 y <- log10(data$BS)
 par(mfrow=c(1,2))
 hist(log10(data$BS))
