@@ -167,9 +167,12 @@ inv.fpl <- function(y, th1, th2, th3, th4){
 tm <- NULL
 tm_pred <- NULL
 for (i in 1:6){
-    tm <- rbind(tm, coef(nls(Absorbance ~ SSfpl2(Concentration,
-                                                 al1, al2, al3, al4),
-                             data=Toledo[Toledo$Test==i & !is.na(Toledo$Concentration),])))
+    tm <- rbind(tm, coef(nls(Absorbance ~ (al1-al4)/(1+(Concentration/al3)^al2)+al4,
+                start=list(al1=1.2, al2=0.64, al3=0.16, al4=.15),
+                data=Toledo[Toledo$Test==i & !is.na(Toledo$Concentration),])))
+    ##tm <- rbind(tm, coef(nls(Absorbance ~ SSfpl2(Concentration,
+    ##                                             al1, al2, al3, al4),
+    ##                         data=Toledo[Toledo$Test==i & !is.na(Toledo$Concentration),])))
     temp <- Toledo[Toledo$Test==i & is.na(Toledo$Concentration),]
     temp$Concentration <- inv.fpl(temp$Absorbance, tm[i,1], tm[i,2], tm[i,3], tm[i,4])
     tm_pred <- rbind(tm_pred, temp)
