@@ -1,0 +1,38 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: 
+  pdf_document: default
+urlcolor: blue
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The short course will provide a quick overview of Bayesian applications in environmental and ecological studies, with examples and code from [Qian et al (2023)](https://github.com/songsqian/BeesRStan/).  I will provide several Rmarkdown files for you to practice.  For best experience, I recommend that you bring your own laptop to the workshop, with R and RStudio installed.  I want to make the workshop informal with time to answer questions when they arise.  I will not use power-point presentation. Instead, I will walk through the Rmarkdown files and explain the materials. For this reason, I would like to ask that you make certain preparations.   All course materials (data, code, references) are available at [Github](https://github.com/songsqian/BeesRStan/), follow the link to [SFS](https://github.com/songsqian/BeesRStan/tree/main/SFS) for Rmd files used in the short course.
+
+## Preparing R and RStan
+I recommend that you update your R and RStudio to avoid version-specific issues.  All materials were tested using the most recent version of R (4.3.0, "Already Tomorrow") and RStudio (2023.03.1+446 "Cherry Blossom").  We will use Stan for all Bayesian computation, via R package `rstan`, which requires access to C compiling toolchain. (Windows users, make sure that you also install `Rtools`. The current version is [Rtools43](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html).) Please follow the following instructions from Stan developers to properly install `rstan`:
+
+- For Windows users using the recent versions of R (4.3 and 4.2), the current version of RStan available from CRAN is not compatible and will return error messages. You need to install the preview of `rstan` 2.26 running the following commends:
+
+```
+remove.packages(c("StanHeaders", "rstan"))
+install.packages("StanHeaders", 
+  repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+install.packages("rstan", 
+  repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+```
+
+- For Mac users, please refer to [Stan Github](https://github.com/stan-dev/rstan/wiki/Configuring-C---Toolchain-for-Mac) for details.
+
+- For Linus users, you are most likely fine. Check [here](https://github.com/stan-dev/rstan/wiki/Configuring-C-Toolchain-for-Linux) just in case.
+
+## Preparing your laptop
+You should create an empty folder on your laptop for this short course and download all `.Rmd` and `.RData` files from the [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder.  Data files used in the class will be accessed via internet.  If you don't have internet access on site, you need to download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **ahead of time**.  I will bring a copy of all necessary files with me just in case. 
+
+## Your Data Examples
+To make the workshop more useful, I divide the day into four sessions. We begin with an introductory session using a simple problem that really don't require Bayesian statistics, definitely not the computing power of Stan. After the morning tea-break, we discuss the benefit of Bayesian, especially with Stan, in helping model evaluation, followed by two examples where the response variable probability distribution is complex.  In the afternoon, I prepared three examples to discuss my favorite topic, Bayesian hierarchical models.  I want to set the last couple of hours of the day to discuss any data examples from participants. If you want to share the example with me ahead of time (before May 31, US time), I will try to include in the last session.  
