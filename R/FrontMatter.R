@@ -48,6 +48,6 @@ plotDIR <- paste(base, "chapters", sep="/")
 packages(arm)
 packages(lattice)
 packages(tikzDevice)
-source("BeesRStan.R")
+source("https://raw.githubusercontent.com/songsqian/BeesRStan/main/R/BeesRStan.R")
 
 
