@@ -1,0 +1,29 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: 
+  pdf_document: default
+urlcolor: blue
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparing R and RStan
+For Windows users using the recent versions of R (4.3 and 4.2), the current version of RStan available from CRAN is not compatible and will return error messages. You need to install the preview of `rstan` 2.26 running the following commends:
+
+```
+remove.packages(c("StanHeaders", "rstan"))
+install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+```
+
+For Mac users, please refer to [Stan Github](https://github.com/stan-dev/rstan/wiki/Configuring-C---Toolchain-for-Mac) for details.
+
+For Linus users, you are most likely fine. Check [here](https://github.com/stan-dev/rstan/wiki/Configuring-C-Toolchain-for-Linux) just in case.
+
+## Course materials 
+All course materials (data, code, references) are available at [Github](https://github.com/songsqian/BeesRStan/tree/main/SFS). 
