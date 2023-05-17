@@ -1,0 +1,1662 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("FrontMatter.R")
+
+packages(rstan)
+packages(rv)
+packages(car)
+rstan_options(auto_write = TRUE)
+options(mc.cores = min(c(parallel::detectCores(), 8)))
+
+nchains <-  min(c(parallel::detectCores(), 8))
+niters <- 5000
+nkeep <- 2500
+nthin <- ceiling((niters/2)*nchains/nkeep)
+
+dataDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R/Data"
+```
+## Introductory Examples 
+
+In this session, we learn the use of Bayesian inference with examples often seen in the ecological and environmental literature, where the response variable distribution models are standard distributions covered in statistical textbooks.  We emphasize the flexibility of the Bayesian approach and explore how such models can often be expanded to make them more realistic (compared to how the data were generated). The guiding principle of Bayesian applications in environmental and ecological statistics should be the three criteria of an applied statistical model recommended by Cox (1995):
+- A probability distribution model for the response variable,
+- A parameter vector that defines the distribution model, at least some of the parameters should reflect features of the system under study
+- The inclusion or representation of the data-generating process.
+
+The last criterion (data generating process) is most important as we want to model we developed to be relevant to the problem at hand.  In other words, we want to model to reflect the likely causal relationship, rather than simply correlation.  Furthermore, environmental and ecological data are often observational. That is, we collect the data without knowing what would be the proper model (method) to analyzed them.  Statistics we learned from graduate school is mostly based on the assumption that we know the right model. We teach statistics chapter by chapter, each time assuming that we know the right model. When we actually know what assumptions we want to test, we design experiments to isolate the main factor of interest and using randomization to neutralize other factors that may also affect the response variable (confounding factors). When we are working on data from typical environmental and ecological monitoring programs, we often started collecting data without knowing what questions we want to answer. For example, most data we used for studying the effects of climate change. In my opinion, analyzing environmental/ecological data often starts with identifying what is the problem to be answered. As all models are wrong (and some are useful), we are interested in identifying how and when a wrong model is useful.
+
+I find the following process is effective in analyzing environmental/ecological data:
+- Starting from existing (simple) models that can be directly implemented in R. 
+- Explore the model fit and identify its weakness, using the "posterior simulation" concept -- use the fitted model to predict what we want to learn and what we already know. 
+- Based on the identified weakness, reformulate the model to redress the weakness.
+- Implement the model in Stan to further identify problems, such as computational stability and identifiability (e.g., the snake fungal disease example with unknown error rates).
+- Repeat the posterior simulation to identify where and when the model is useful.
+
+### Example 1 -- The Effect of Gulf of Mexico Hypoxia on Benthic Communities
+Section 4.2.2, Qian et al (2022).
+```{R}
+benthic.data <- read.csv(paste(dataDIR, "BenthicData.csv", sep="/"),
+                         header=T)
+benthic.data$area2 <-
+    ordered(benthic.data$area2,
+            levels=levels(ordered(benthic.data$area2))[c(2,1,3)])
+benthic.data$Area <-
+    ordered(benthic.data$Area,
+            levels=levels(ordered(benthic.data$Area))[c(2,1,3)])
+head(benthic.data)
+names(benthic.data)
+## Station: core,
+```
+Initial analysis (ANOVA) was presented in Baustian et al (2009). It was published, but unsatisfactory nevertheless. Qian et al (2009) presented a hierarchical modeling alternative implemented in WinBUGS. The original study designed the sampling to mimic a randomized experiment. However, the treatment (benthic hypoxia) cannot be randomly assigned. Confounding factors cannot be ignored.  Instead of a hypothesis testing problem (ANOVA), we address the problem as an estimation problem -- estimating benthic community abundance and richness in three zones, hypoxic zone, inshore, and offshore "controls."  
+
+- MLE model -- multilevel model with sampling cores nested in three zones.
+```{R, fig.height=5.75, fig.width=4.5}
+benthic.data$AS <- with(benthic.data, factor(paste(Area, Station, sep=":")))
+benthicAb.Lme1 <- lmer(log(Abundance) ~ 1+(1|AS)+(1|Area), data=benthic.data)
+benthicRn.Lme1 <- lmer(log(Richness) ~ 1+(1|AS)+(1|Area), data=benthic.data)
+summary(benthicAb.Lme1)
+summary(benthicRn.Lme1)
+
+dotLmeAb1 <- dotplot(ranef(benthicAb.Lme1, condVar=T))
+dotLmeRn1 <- dotplot(ranef(benthicRn.Lme1, condVar=T))
+print(dotLmeRn1[[1]], pos=c(0,0,1,0.75), more=T)
+print(dotLmeRn1[[2]], pos=c(0,0.65, 1,1), more=F)
+
+print(dotLmeAb1[[1]], pos=c(0,0,1,0.75), more=T)
+print(dotLmeAb1[[2]], pos=c(0,0.65, 1,1), more=F)
+```
+Within zone variance is too high for the MLE method to properly estimate the among zone variance.  
+
+- Bayesian model
+Using a Bayesian hierarchical model, separating cores within each zone:
+$$
+y_{ijk} \sim N(\mu_{jk}, \sigma_{yk}^2)
+$$
+where, $ijk$ represents the $i$th observation from the $jth$ core, in zone $k$, and 
+$$
+\mu_{jk} \sim N(\theta_k, \sigma^2_z)
+$$
+and finally, 
+$$
+\theta_k \sim N(\mu_{hyp}, \sigma^2_{hyp})
+$$
+```{R}
+## Station: core,
+## Area: zone
+stan1_gom <- " 
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  int I;  //number of zones
+  real y[K]; //observed response
+  int core[K]; //core index
+  int zone[K]; //zone index
+  int core_zone[J]; //zone
+}
+parameters{
+  real mu[J];
+  real theta[I];
+  real mu_hyp;
+  real<lower=0> sigma_y[I];
+  real<lower=0> sigma_i;
+  real<lower=0> sigma_hyp;
+}
+model{
+  sigma_hyp ~ normal(0,1); // for fast comuting 
+  for (i in 1:I){
+    theta[i] ~ normal(mu_hyp, sigma_hyp);
+  }
+  for (j in 1:J){
+    mu[j] ~ normal(theta[core_zone[j]], sigma_i);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu[core[k]], sigma_y[zone[k]]);
+  }
+}
+generated quantities{
+  real delta1;
+  real delta2;
+  real delta3;
+  delta1 = theta[2]-theta[1];
+  delta2 = theta[2]-theta[3];
+  delta3 = theta[1]-theta[3];
+}
+"
+stan.fit <- stan_model(model_code=stan1_gom)
+```
+We used a `generated quantities` code block to directly calculate the differences between two zones.
+
+Now organizing input data and run the model
+```{R}
+stan.in3 <- function(data = benthic.data, y.col=5,  ## richness
+                     chains=nchains){ ## no slope
+    n <- dim(data)[1]
+    y <- log(data[,y.col])
+    core <- as.numeric(ordered(data$Station))
+    n.core <- max(core)
+    zone <- as.numeric(ordered(data$Area))
+    n.zone <- max(zone)
+    oo <- order(core)
+    ind <- cumsum(table(core[oo]))
+    Core.zone <- zone[oo][ind] ## each core belongs to which zone
+    stan.dat <- list(K=n, J=n.core, I=n.zone, y=y, core=core,
+                     zone=zone, core_zone=Core.zone)
+    inits <- list()
+    for (i in 1:chains)
+        inits[[i]] <- list( mu = rnorm(n.core), theta=rnorm(n.zone),
+                           mu_hyp=rnorm(1), sigma_i=runif(1),
+                           sigma_y=runif(n.zone), sigma_hyp=runif(1))
+    parameters <- c("mu","theta","mu_hyp", "sigma_y", "sigma_i",
+                    "sigma_hyp",  "delta1", "delta2","delta3")
+    return(list(para=parameters, data=stan.dat, inits=inits,
+                n.chains=chains))
+}
+
+input.to.stan <- stan.in3()  ## long-runs -- results without sigma_hyp prior saved
+fit2keep <- sampling(stan.fit, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=20))
+print(fit2keep)
+rich_stan <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+input.to.stan <- stan.in3(y.col = 6)  ## abundance
+fit2keep <- sampling(stan.fit, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=20))
+print(fit2keep)
+abun_stan <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## Extract output
+## zone means
+tempA <- abun_stan[1:15]
+names(tempA) <- paste("$\\mu_{", 1:15, "}$", sep="")
+tempR <- rich_stan[1:15]
+names(tempR) <- paste("$\\mu_{", 1:15, "}$", sep="")
+## zone mean differences
+delta0R <- rich_stan[25:27]
+delta0A <- abun_stan[25:27]
+names(delta0R) <- c("H-I","H-O","I-O")
+names(delta0A) <- c("H-I","H-O","I-O")
+
+```
+
+We noticed warning messages about divergence transition. It is a sign of computational difficulties in sampling the posterior distribution.
+
+```{R}
+par(mfrow=c(1,2),mar=c(3,3,1,1),
+    mgp=c(1.25,0.125,0), las=1,tck=0.01)
+plot(rich_stan$mu_hyp, log(rich_stan$sigma_hyp), cex=0.5,
+     ylim=c(-3.5,log(3)), xlim=c(-0,5),
+     xlab="$\\mu_{hyp}$", ylab="$\\log(\\sigma_{hyp})$")
+text(1.5,-3, "Richness")
+plot(abun_stan$mu_hyp, log(abun_stan$sigma_hyp), cex=0.5,
+##     ylim=c(-3.5,log(150)), xlim=c(-100,100),
+     xlab="$\\mu_{hyp}$", ylab="$\\log(\\sigma_{hyp})$")
+text(3,-3, "Abundance")
+```
+What we encountered is the famous Neal's funnel, indicating the lack of information to properly quantify both $\mu_{hyp}$ and $\sigma^2_{hyp}$ together.  This feature often leads to highly correlated $\theta_k$. We need informative prior on one of the two parameters. In this case, I used a strong prior for $\sigma^2_{hyp}$ (a half normal N(0,1)). When using a noninformative prior, the program runs very slowly. Computationally, we can avoid the computational difficulties by reparameterizing $\theta_k$. Instead of modeling it as a normal random variable with parameters $\mu_{hyp}$ and $\sigma_{hyp}^2$, we introduce a new parameter $z_k \sim N(0,1)$ and model $\theta_k$ as a transformed variable: $\theta_k = \mu_{hyp} + \sigma_{hyp} z_k$.  As a result, we no longer directly sample $\theta_k$. It is an effective way to reduce the number of divergent transitions. But the model stays the same and the Neal's funnel remains.
+
+The computational issues of this model made us to look at this problem more.  We realized that the data we have do not have enough information to simultaneously quantify $\theta_k$, $\mu_{hyp}$, and $\sigma_{hyp}^2$, largely due to the large within zone (among core) variation.  The multilevel model suggested that including zone as a random effect is not effective in explaining the total variance.  As such, we proposed two alternative models without directly parameterizing the among zone variation.  
+
+In the first alternative we removed zone as a hierarchy and model the core means as exchangeable:
+$$
+\mu_{jk} \sim N(\mu_{hyp}, \sigma^2_{hyp})
+$$
+We then estimate each zone mean as the average of the means of cores inside the respective zone. The response variable is standardized to allow the use of relatively constrained priors for variance parameters (e.g., half normal N(0,0.5)).
+```{R}
+###
+### First alternative (One-way ANOVA)
+###
+stan2_gom <- "
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  real y[K]; //observed response
+  int core[K]; //core index
+}
+parameters{
+  real mu[J];
+  real mu_hyp;
+  real<lower=0> sigma_y;
+  real<lower=0> sigma_hyp;
+}
+model{
+  sigma_hyp ~ normal(0,0.5);
+  sigma_y ~ normal(0,0.5);
+  for (j in 1:J){
+    mu[j] ~ normal(mu_hyp, sigma_hyp);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu[core[k]], sigma_y);
+  }
+}
+"
+stan.fit2 <- stan_model(model_code=stan2_gom)
+
+stan.in4 <- function(data = benthic.data, y.col=5,
+                     chains=nchains){ ## no slope
+  n <- dim(data)[1]
+  y <- log(data[,y.col])
+  y_ave <- mean(y)
+  y_sd <- sd(y)
+
+  y <- (y-y_ave)/y_sd
+  core <- as.numeric(ordered(data$Station))
+  n.core <- max(core)
+
+  stan.dat <- list(K=n, J=n.core, y=y, core=core)
+  inits <- list()
+  for (i in 1:chains)
+    inits[[i]] <- list( mu = rnorm(n.core),
+                        mu_hyp=rnorm(1),
+                        sigma_y=runif(1), sigma_hyp=runif(1))
+  parameters <- c("mu","mu_hyp", "sigma_y", "sigma_hyp")
+  return(list(para=parameters, data=stan.dat, inits=inits,
+              n.chains=chains, y_cen=y_ave, y_spd=y_sd))
+}
+
+input.to.stan <- stan.in4()
+fit2keep <- sampling(stan.fit2, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains)
+print(fit2keep)
+rich_stan2 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## processing output
+core <- as.numeric(ordered(benthic.data$Station))
+n.core <- max(core)
+zone <- as.numeric(ordered(benthic.data$Area))
+n.zone <- max(zone)
+oo <- order(core)
+ind <- cumsum(table(core[oo]))
+Core.zone <- zone[oo][ind] ## each core belongs to which zone
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+## return to the original scale
+core1.musR <- input_mu + input_sd*rich_stan2[1:15]
+zone11.Rmu <- mean(core1.musR[Core.zone==1])
+zone12.Rmu <- mean(core1.musR[Core.zone==2])
+zone13.Rmu <- mean(core1.musR[Core.zone==3])
+
+deltaR11 = zone12.Rmu-zone11.Rmu
+deltaR12 = zone12.Rmu-zone13.Rmu
+deltaR13 = zone11.Rmu-zone13.Rmu
+
+delta1R <- c(deltaR11, deltaR12, deltaR13)
+names(delta1R) <- c("H-I","H-O","I-O")
+
+## repeat for Abundance:
+input.to.stan <- stan.in4(y.col=6)
+fit2keep <- sampling(stan.fit2, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains)
+print(fit2keep)
+abun_stan2 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## processing output
+core <- as.numeric(ordered(benthic.data$Station))
+n.core <- max(core)
+zone <- as.numeric(ordered(benthic.data$Area))
+n.zone <- max(zone)
+oo <- order(core)
+ind <- cumsum(table(core[oo]))
+Core.zone <- zone[oo][ind] ## each core belongs to which zone
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+## return to the original scale
+core1.musA <- input_mu + input_sd*abun_stan2[1:15]
+zone11.Amu <- mean(core1.musA[Core.zone==1])
+zone12.Amu <- mean(core1.musA[Core.zone==2])
+zone13.Amu <- mean(core1.musA[Core.zone==3])
+
+deltaA11 = zone12.Amu-zone11.Amu
+deltaA12 = zone12.Rmu-zone13.Amu
+deltaA13 = zone11.Rmu-zone13.Amu
+
+delta1A <- c(deltaA11, deltaA12, deltaA13)
+names(delta1A) <- c("H-I","H-O","I-O")
+```
+The second alternative is to mimic the multilevel model:
+$$
+\begin{array}{rcl}
+y_i & \sim & N(\mu_i, \sigma^2_y)\\
+\mu_i & = & \mu_0 + \alpha_{k[i]} + \beta_{j[i]}\\
+\alpha_k & \sim & N(0,\sigma_z^2)\\
+\beta_j & \sim & N(0,\sigma_c^2)
+\end{array}
+$$
+where $k[i]$ and $j[i]$ represent that the $i$th observation is in $k$th zone and $j$th core. 
+```{R}
+stan3_gom <- "
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  int I;  //number of zones
+  real y[K]; //observed response
+  int core[K]; //core index
+  int zone[K]; //zone index
+}
+parameters{
+  real muK[J];
+  real muZ[I];
+  real mu0;
+  real<lower=0> sigmaY;
+  real<lower=0> sigmaK;
+  real<lower=0> sigmaZ;
+}
+model{
+  sigmaK ~ normal(0,0.5);
+  sigmaZ ~ normal(0,0.5);
+  sigmaY ~ normal(0,0.5);
+  for (i in 1:I){
+    muZ[i] ~ normal(0, sigmaZ);
+  }
+  for (j in 1:J){
+    muK[j] ~ normal(0, sigmaK);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu0+muK[core[k]]+muZ[zone[k]], sigmaY);
+  }
+}
+generated quantities{
+  real delta1;
+  real delta2;
+  real delta3;
+  delta1 = muZ[2]-muZ[1];
+  delta2 = muZ[2]-muZ[3];
+  delta3 = muZ[1]-muZ[3];
+}
+"
+
+stan.fit3 <- stan_model(model_code=stan3_gom)
+
+stan.in5 <- function(data = benthic.data, y.col=5, chains=nchains){
+  n <- dim(data)[1]
+  y <- log(data[,y.col])
+  y_ave <- mean(y)
+  y_sd <- sd(y)
+  y <- (y-y_ave)/y_sd
+  core <- as.numeric(ordered(data$Station))
+  n.core <- max(core)
+  zone <- as.numeric(ordered(data$Area))
+  n.zone <- max(zone)
+
+  stan.dat <- list(K=n, J=n.core, I=n.zone, y=y, core=core, zone=zone)
+  inits <- list()
+  for (i in 1:chains)
+    inits[[i]] <- list( muK = rnorm(n.core),
+                        muZ=rnorm(n.zone),
+                        mu0=rnorm(1),
+                       sigmaY=runif(1), sigmaK=runif(1),
+                       sigmaZ=runif(1))
+  parameters <- c("mu0","muK", "muZ", "sigmaY", "sigmaK",
+                  "sigmaZ", "delta1", "delta2", "delta3")
+  return(list(para=parameters, data=stan.dat, inits=inits,
+              n.chains=chains, y_cen=y_ave, y_spd=y_sd))
+}
+
+input.to.stan <- stan.in5()
+fit2keep <- sampling(stan.fit3, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=15))
+print(fit2keep)
+rich_stan3 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+zone2.musR <- input_sd*rich_stan3[17:19]
+core2.musR <- input_mu+input_sd*rich_stan3[2:16]
+
+zone21.Rmu <- mean(core2.musR[Core.zone==1]) + zone2.musR[1]
+zone22.Rmu <- mean(core2.musR[Core.zone==2]) + zone2.musR[2]
+zone23.Rmu <- mean(core2.musR[Core.zone==3]) + zone2.musR[3]
+
+deltaR21 = zone22.Rmu-zone21.Rmu
+deltaR22 = zone22.Rmu-zone23.Rmu
+deltaR23 = zone21.Rmu-zone23.Rmu
+
+delta2R <- c(deltaR21, deltaR22, deltaR23)
+names(delta2R) <- c("H-I","H-O","I-O")
+
+input.to.stan <- stan.in5(y.col=6)
+fit2keep <- sampling(stan.fit3, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=15))
+print(fit2keep)
+abun_stan3 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+zone2.musA <- input_sd*abun_stan3[17:19]
+core2.musA <- input_mu+input_sd*abun_stan3[2:16]
+
+zone21.Amu <- mean(core2.musA[Core.zone==1]) + zone2.musA[1]
+zone22.Amu <- mean(core2.musA[Core.zone==2]) + zone2.musA[2]
+zone23.Amu <- mean(core2.musA[Core.zone==3]) + zone2.musA[3]
+
+deltaA21 = zone22.Amu-zone21.Amu
+deltaA22 = zone22.Amu-zone23.Amu
+deltaA23 = zone21.Amu-zone23.Amu
+
+delta2A <- c(deltaA21, deltaA22, deltaA23)
+names(delta2A) <- c("H-I","H-O","I-O")
+```
+Now we make some comparisons of the three alternative models
+```{R}
+## 1. Estimated core means
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(tempR, xlab="Original model", top.axis=F)
+mlplot(core1.musR, xlab="Alternative model 1",
+       main="log Richness", axes=F)
+axis(1)
+mlplot(core2.musR, xlab="Alternative model 2", axes=F)
+axis(1)
+
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(tempA, xlab="Original model", top.axis=F)
+mlplot(core1.musA, xlab="Alternative model 1",
+       main="log Abundance", axes=F)
+axis(1)
+mlplot(core2.musA, xlab="Alternative model 2", axes=F)
+axis(1)
+
+## 2. Estimated zone means
+#### extract zone means and mean differences
+zone0R.thetas <- rich_stan[16:18]
+names(zone0R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+zone0A.thetas <- abun_stan[16:18]
+names(zone0A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone1R.thetas <- c(zone11.Rmu, zone12.Rmu, zone13.Rmu)
+names(zone1R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone1A.thetas <- c(zone11.Amu, zone12.Amu, zone13.Amu)
+names(zone1A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone2R.thetas <- c(zone21.Rmu, zone22.Rmu, zone23.Rmu)
+names(zone2R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone2A.thetas <- c(zone21.Amu, zone22.Amu, zone23.Amu)
+names(zone2A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(zone0R.thetas, xlab="Original model", top.axis=F, xlim=c(2,3.5))
+abline(v=0)
+mlplot(zone1R.thetas, xlab="Alternative model 1", main="log Richness",
+       axes=F, xlim=c(2,3.5))
+axis(1)
+abline(v=0)
+mlplot(zone1R.thetas, xlab="Alternative model 2", axes=F, xlim=c(2,3.5))
+axis(1)
+abline(v=0)
+
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(zone0A.thetas, xlab="Original model", top.axis=F, xlim=c(3.6,6))
+mlplot(zone1A.thetas, xlab="Alternative model 1", main="log Abundance",
+       axes=F, xlim=c(3.6,6))
+axis(1)
+mlplot(zone1A.thetas, xlab="Alternative model 2", axes=F, xlim=c(3.6,6))
+axis(1)
+
+## between zone differences
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(delta0A, xlab="Original model 1", top.axis=F, xlim=c(-2,1.5))
+abline(v=0)
+mlplot(delta1A, xlab="Alternative model 1",
+       main="log Abundance", axes=F,
+       xlim=c(-2,1.5))
+axis(1)
+abline(v=0)
+mlplot(delta2A, xlab="Alternative model 2", axes=F, xlim=c(-2,1.5))
+axis(1)
+abline(v=0)
+dev.off()
+
+par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(delta0R, xlab="Original model", top.axis=F, xlim=c(-1.5,0.5))
+abline(v=0)
+mlplot(delta1R, xlab="Alternative model 1",
+       main="log Richness", axes=F, xlim=c(-1.5,0.5))
+abline(v=0)
+axis(1)
+mlplot(delta2R, xlab="Alternative model 2", axes=F, xlim=c(-1.5,0.5))
+axis(1)
+abline(v=0)
+
+```
+### Example 2 -- Zero-Inflation or Not?
+In this example, we introduce the concept of Bayesian posterior simulation for model evaluation.
+
+Incidental Catch in Fisheries (Hilborn and Mangel, 1997. *Ecological Detective*) -- determine the minimum sample size of "statistically meaningful data," data that will result in an estimate of the mean by-catch rate with a limited level of uncertainty.  The original study (Bartle 1991) used the Central-Limit-Theorem-based confidence interval to define the acceptable level of uncertainty.  As a result, the goal is to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) used the negative binomial distribution to describe the bycatch data.  The response variable is the bycatch count, a count variable taking only non-negative integer values.
+
+The Poisson distribution is, perhaps, the most commonly used probability distribution for count data. Fisher et al (1943) suggested that Poisson is one of three types of distribution for biological measurements.  
+
+The Poisson distribution has one parameter ($\lambda$), representing the mean. The probability function is 
+$$
+\pi(Y=k) = \frac{\lambda^ke^{-\lambda}}{k!}
+$$
+When observing independent observations $y_1,\cdots,y_n$, the log-likelihood function is
+$$
+LL = \log\left (\prod_{i=1}^n\frac{\lambda^ke^{-\lambda}}{k!}\right )\propto \log(\lambda)\sum_{i=1}^ny_i - n\lambda
+$$
+In a Bayesian statistics, we normally use the gamma distribution as the prior of $\lambda$, because the posterior distribution of $\lambda$ is also a gamma distribution. If the prior is $\lambda\sim gamma(\alpha, \beta)$, the posterior is $\lambda \mid y_1,\cdots,y_n \sim gamma(\alpha+\sum_{i=1}^y, \beta+n)$.  The gamma distribution is the same as the $\chi^2$ distribution, which Fisher et al (1943) used to derive the negative binomial distribution. 
+
+We fit the bycatch data using both Poisson and binomial distributions to show why the negative binomial model is more useful.
+
+```{R}
+zipdata <- data.frame(Capture=0:17,
+                      numb=c(807,37,27,8,4,4,1,3,1,0,0,2,1,1,0,0,0,1))
+zippos <- rep(zipdata[-1,1], zipdata$numb[-1])
+zip0 <- zipdata$numb[1]
+
+##############################################
+## Simple models (without zero inflation) ####
+##############################################
+
+## the Poisson model
+Pois_bycatch <- "
+data{
+      int<lower=1> n0; //number of 0's
+      int<lower=1> np; //number of non-zero counts
+      int<lower=1> yp[np];
+   }
+   parameters{
+      real<lower=0> lambda;
+   }
+   model{
+     target += n0*poisson_log_lpmf(0|log(lambda));
+     target += poisson_log_lpmf(yp|log(lambda));
+   }
+"
+fitPois <- stan_model(model_code=Pois_bycatch)
+
+## Neg_binomial
+NB_bycatch <- "
+data{
+      int<lower=1> n0; //number of 0's
+      int<lower=1> np; //number of non-zero counts
+      int<lower=1> yp[np];
+   }
+   parameters{
+      real<lower=0> mu;
+      real<lower=0> r;
+   }
+   model{
+     mu ~ normal(0,2);
+     r ~ normal(0,2);
+     target += n0*neg_binomial_2_log_lpmf(0 | log(mu), r);
+     target += neg_binomial_2_log_lpmf(yp | log(mu), r);
+   }
+"
+fitNB <- stan_model(model_code=NB_bycatch)
+```
+We separated 0s from non-zero observations to make the code more comparable to the zero-inflated alternatives.
+
+```{R}
+## one input function for both models
+bycatch_input <- function(yp=zippos, n0=zip0, model="Pois", n.chains=nchains){
+    N <- length(yp)+n0
+    np <- length(yp)
+    data <- list(np=np, n0=n0, yp=yp)
+    inits <- list()
+    for (i in 1:n.chains){
+        if (model=="Pois")
+            inits[[i]] <- list(lambda=runif(1))
+        else
+            inits[[i]] <- list(mu=runif(1), r=runif(1))
+    }
+    if (model=="Pois")
+        pars <- c("lambda")
+    else
+        pars <- c("mu","r")
+  return(list(data=data, init=inits, nchains=n.chains, para=pars, model=model))
+}
+```
+Fitting the model
+```{R}
+## the Poisson model
+input.to.stan <- bycatch_input()
+keep_Pois <- sampling(fitPois, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_Pois)
+Pois_stanout <- extract(keep_Pois, pars="lambda")
+Pois_coef <- rvsims(as.matrix(as.data.frame(Pois_stanout)))
+
+## negative bin:
+input.to.stan <- bycatch_input(model="NB")
+keep_NB <- sampling(fitNB, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_NB)
+pairs(keep_NB, pars=c("mu","r"))
+NB_stanout <- extract(keep_NB, pars=c("mu","r"))
+NB_coef <- rvsims(as.matrix(as.data.frame(NB_stanout)))
+
+## Comparison
+means <- c(Pois_coef[1], NB_coef[1])
+names(means) <- c("$\\lambda_{pois}$", "$\\mu_{nb}$")
+
+par(mgp=c(1.25,0.125,0), tck=0.01)
+mlplot(means, xlab="Estimated mean by-catch per tow")
+
+```
+Posterior simulation -- using the fitted model to replicate the data repeatedly
+```{R}
+## simulations
+nsims <- length(Pois_stanout$lambda)
+n <- length(zippos)+zip0
+
+### Poisson model
+n0_pois <- mu_pois <- sig_pois <- NULL
+for (i in 1:nsims){
+    tmp <- rpois(n, lambda=Pois_stanout$lambda[i])
+    n0_pois <- c(n0_pois, mean(tmp==0))
+    mu_pois <- c(mu_pois, mean(tmp))
+    sig_pois <- c(sig_pois, sd(tmp))
+}
+
+### negative Bin:
+n0_NB <- mu_NB <- sig_NB <- NULL
+for (i in 1:nsims){
+    tmp <- rnbinom(n, mu=NB_stanout$mu[i], size=NB_stanout$r[i])
+    n0_NB <- c(n0_NB, mean(tmp==0))
+    mu_NB <- c(mu_NB, mean(tmp))
+    sig_NB <- c(sig_NB, sd(tmp))
+}
+
+par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
+hist(n0_pois, xlim=range(c(n0_pois, n0_NB, zip0/n)),
+     xlab="fraction of zeros", ylab="Poisson", main="",
+     border="white", density=-1, col="gray", yaxt="n")
+abline(v=zip0/n)
+hist(mu_pois,
+     xlim=range(c(mu_pois, mu_NB, mean(c(rep(0,zip0),zippos)))),
+     xlab="mean", ylab="", yaxt="n", main="",
+     border="white", density=-1, col="gray")
+abline(v=mean(c(rep(0,zip0),zippos)))
+#hist(sig_pois,
+#     xlim=range(c(sig_pois, sig_NB, sd(c(rep(0,zip0),zippos)))),
+#     xlab="standard deviation", ylab="", yaxt="n", main="",
+#     border="white", density=-1, col="gray")
+hist(sig_pois,
+     xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
+     xlab="standard deviation", ylab="", main="",yaxt="n",
+     border="white", density=-1, col="gray")
+abline(v=sd(c(rep(0,zip0),zippos)))
+
+hist(n0_NB, xlim=range(c(n0_pois, n0_NB,zip0/n)),yaxt="n",
+     xlab="fraction of zeros", ylab="negative binomial", main="",
+     border="white", density=-1, col="gray")
+abline(v=zip0/n)
+hist(mu_NB,
+     xlim=range(c(mu_pois, mu_NB,mean(c(rep(0,zip0),zippos)))),
+     xlab="mean", ylab="", main="",yaxt="n",
+     border="white", density=-1, col="gray")
+abline(v=mean(c(rep(0,zip0),zippos)))
+hist(sig_NB,
+     xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
+     xlab="standard deviation", ylab="", main="",yaxt="n",
+     border="white", density=-1, col="gray")
+abline(v=sd(c(rep(0,zip0),zippos)))
+```
+The Poisson model cannot replicate the variance and the fraction of zeros of the data. The data are zero inflated if the Poisson model is used. 
+
+**Zero-Inflated** count data models
+
+A zero-inflated model is a mixture model. Under certain conditions, the observations are always 0 (true zero). For example, there were no sea birds present.  Without knowing the conditions, we must treat observed 0s as a combination of true zeros and 0s resulted from, for example, the imperfect sampling method (i.e., bycatch happened but failed to observe).  Assuming that the chance of sampling a true 0 is $\theta$ (and a probability of $1-\theta$ sampling a Poisson counts).  The probability of observing any outcome $y_i$ is then,
+$$
+\pi(y_i) = \begin{cases}\theta+(1-\theta)Pois(0\mid \theta) & \mathrm{if}\ y_i=0\\
+(1-\theta)Pois(y_i\mid \lambda) & \mathrm{if}\ y_l > 0.\end{cases}
+$$
+The likelihood function is 
+$$
+L=[\theta+(1-\theta)e^{-\lambda}]^{n_0}\times \prod_{i=1}^{n_p}(1-\theta)\frac{\lambda^{y_i}e^{-\lambda}}{y_i!}
+$$
+The log-likelihood function is
+$$
+LL=n_0\log[\theta+(1-\theta)e^{-\lambda}]+\left (n_p\log(1-\theta)+\sum_{i=1}^n\log\left (\frac{\lambda^{y_i}e^{-\lambda}}{y_i!}\right )\right )
+$$
+Writing the log-likelihood in Stan:
+```
+model{
+  target += n0*log_sum_exp(log(theta), log1m(theta-\lambda));
+  target += np*log1m(theta) + poisson_lpmf(yp| lambda);
+}
+```
+Lambert (1992) introduced a generalized linear model for zero-inflated Poisson process. In the model, the Poisson model parameter $\lambda$ and the binomial model parameter $\theta$ are modeled as linear functions of predictors through the respective link function:
+$$
+\begin{array}{rcl}
+\log(\lambda) & = & \mathbf{X\beta}\\
+\mathrm{logit}(\theta) & = & \mathbf{Z\alpha}
+\end{array}
+$$
+Fitting the models:
+```{R}
+zip_bycatch <-"
+data{
+  int<lower=1> n0;
+  int<lower=1> np;
+  int<lower=1> yp[np];
+}
+parameters{
+  real<lower=0,upper=1> theta;
+  real<lower=0> lambda;
+}
+transformed parameters{
+  real eta;
+  real zi;
+  eta = log(lambda);
+  zi = logit(theta);
+}
+model{
+  theta ~ beta(1,1);
+  lambda ~ normal(0,5);
+  target += n0*log_sum_exp(bernoulli_logit_lpmf(1|zi),
+                           bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
+  target += np*bernoulli_logit_lpmf(0|zi) +
+            poisson_log_lpmf(yp | eta);
+}
+"
+
+zinb_bycatch <-"
+data{
+  int<lower=1> n0;
+  int<lower=1> np;
+  int<lower=1> yp[np];
+}
+parameters{
+  real<lower=0,upper=1> theta;
+  real<lower=0> mu;
+  real<lower=0> r;
+}
+transformed parameters{
+  real eta;
+  eta=log(mu);
+}
+model{
+  theta ~ beta(1,1);
+  mu ~ normal(0,5);
+  r ~ normal(0,5);
+  target += n0*log_sum_exp(log(theta),
+                           log1m(theta)+neg_binomial_2_log_lpmf(0|eta,r));
+  target += np*log1m(theta) +
+            neg_binomial_2_log_lpmf(yp | eta, r);
+}
+"
+
+
+##############################################
+fit_zip <- stan_model(model_code = zip_bycatch)
+fit_zinb <- stan_model(model_code = zinb_bycatch)
+##############################################
+```
+
+Processing data and initial values
+```{R}
+##############################################
+## The data and initial values
+##############################################
+ZI_bycatch <- function(yp=zippos, n0=zip0, model="zip", n.chains=nchains){
+    N <- length(yp)+n0
+    np <- length(yp)
+    data <- list(np=np, n0=n0, yp=yp)
+    inits <- list()
+    for (i in 1:n.chains){
+        if (model == "zip")
+            inits[[i]] <- list(lambda=runif(1), theta=runif(1))
+        else
+            inits[[i]] <- list(mu=runif(1), r=runif(1), theta=runif(1))
+    }
+    if (model == "zip")
+        paras <- c("lambda","theta")
+    else
+        paras <- c("theta","mu","r")
+  return(list(data=data, init=inits, nchains=n.chains, para=paras, model=model))
+}
+
+input.to.stan <- ZI_bycatch()
+keep_zip <- sampling(fit_zip, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_zip)
+
+input.to.stan <- ZI_bycatch(model="zinb")
+keep_zinb <- sampling(fit_zinb, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_zinb)
+
+##save(keep,file="zinb_bycatch.RData")
+pairs(keep_zip, pars=c("lambda","theta"))
+pairs(keep_zinb, pars=c("mu","r","theta"))
+```
+Strong correlation in the zinb model indicating non-identifiability. Additional information (e.g., of $\theta$) is needed.
+
+Making comparisons
+```{R}
+zinb_coef <- as.data.frame(extract(keep_zinb, permute=T,
+                                   pars=c("theta","mu","r")))
+zip_coef <- as.data.frame(extract(keep_zip, permute=T,
+                                  pars=c("theta","lambda")))
+
+mu <- mean(c(rep(0,zip0),zippos))
+s <- sd(c(rep(0,zip0),zippos))
+
+## percent of 0 from zinb model
+n0_zinb <- NULL
+mu_zinb <- NULL
+sig_zinb <- NULL
+for (i in 1:dim(zinb_coef)[1]){
+    n0tmp <- rbinom(1, n, zinb_coef$theta[i])
+    tmp <- c(rep(0, n0tmp), rnbinom(n-n0tmp, mu=zinb_coef$mu[i],
+                                    size=zinb_coef$r[i]))
+    n0_zinb <- c(n0_zinb, mean(tmp==0))
+    mu_zinb <- c(mu_zinb, mean(tmp))
+    sig_zinb <- c(sig_zinb, sd(tmp))
+}
+
+## percent of 0 from zip model
+n0_zip <- NULL
+mu_zip <- NULL
+sig_zip <- NULL
+for (i in 1:dim(zip_coef)[1]){
+    n0tmp <- rbinom(1, n, zip_coef$theta[i])
+    tmp <- c(rep(0, n0tmp), rpois(n-n0tmp,
+                                  lambda=zip_coef$lambda[i]))
+    n0_zip <- c(n0_zip, mean(tmp==0))
+    mu_zip <- c(mu_zip, mean(tmp))
+    sig_zip <- c(sig_zip, sd(tmp))
+}
+
+par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
+
+hist(n0_zinb, xlim=range(c(n0_zinb, zip0/n, n0_zip)), yaxt="n",
+     xlab="fraction of zeros", ylab="ZINB", main="",
+     border="white", col="gray", density=-1)
+abline(v=zip0/n)
+## mean
+hist(mu_zinb, xlim=range(c(mu_zinb, mu, mu_zip)), yaxt="n",
+     xlab="mean", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=mu)
+## sd
+hist(sig_zinb, xlim=range(c(sig_zinb, s, sig_zip)), yaxt="n",
+     xlab="standard deviation", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=s)
+
+hist(n0_zip, xlim=range(c(n0_zip, zip0/n, n0_zinb)), yaxt="n",
+     xlab="fraction of zeros", ylab="ZIP",  main="",
+     border="white", col="gray", density=-1)
+abline(v=zip0/n)
+## mean
+hist(mu_zip, xlim=range(c(mu_zip, mu, mu_zinb)), yaxt="n",
+     xlab="mean", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=mu)
+## sd
+hist(sig_zip, xlim=range(c(sig_zip, s, sig_zinb)), yaxt="n",
+     xlab="standard deviation", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=s)
+
+```
+
+
+### Example 3 --- Grass Carp Population Estimation
+Grass carp, a popular aquaculture species in Asia and an invasive nuisance species in the Great Lakes region. Once grass carp reproduction in Sandusky River, a Lake Erie tributary was confirmed in 2016, a regional task force was established to develop control methods. One approach was to physically remove these fish using electrofishing method.  Using capture data from Sandusky River, we developed a crude mode for estimating grass carp population in the area.  This example illustrates how to use Bayesian approach to systematically improve an imperfect (or wrong) model to produce useful information.
+
+The objective of estimating grass carp population is to evaluate the effectiveness of the removal effort.  We faced several difficulties in obtaining statistically "meaningful" data.  First, grass carp is still rare in the region. Although more than 100 fish were removed every year from Sandusky River, the vast majority of sampling trips failed to capture grass carp. When successful, the number of captures is low, mostly 1, rarely 2, and only one time 3. Even with a properly designed (random) sampling plan, we do not have existing statistical model for this kind of data.  
+```{R}
+## Importing data
+### initial data set used in Gouveia et al (2023)
+gc_data <- read.csv(paste(dataDIR, "1820_GC_disch.csv", sep = "/"), header = T)
+### updated with 2021 data and calculated sampling distance from 2020-2021
+gc_data2 <- read.csv(paste(dataDIR, "sandusky_model_data2.csv", sep = "/"), header = T)
+### 2020-2021 efishing only (without nets)
+gc_data3 <- read.csv(paste(dataDIR, "sandusky_model_efishonly.csv", sep="/"), header=T)
+### Combined efishing and efishing + nets 2022
+gc_data4 <- read.csv(paste(dataDIR, "sandusky_combo_2022.csv", sep = "/"), header = T)
+### efishing only 2022
+gc_data5 <- read.csv(paste(dataDIR, "sandusky_efishonly_2022.csv", sep="/"), header=T)
+### removing empty lines
+gc_data2 <- gc_data2[!is.na(gc_data2$count),]
+gc_data3 <- gc_data3[!is.na(gc_data3$count),]
+#convert segment letters to numbers
+#wsection.data$segment<-as.numeric(wsection.data$segment)
+gc_data$segment[gc_data$segment == "M"] <- 1
+gc_data$segment[gc_data$segment == "LM"] <- 2
+gc_data$segment[gc_data$segment == "UM"] <- 3
+gc_data$segment[gc_data$segment == "FM"] <- 4
+gc_data$segment <- as.numeric(gc_data$segment)
+
+gc_data2$segment[gc_data2$segment == "M"] <- 1
+gc_data2$segment[gc_data2$segment == "LM"] <- 2
+gc_data2$segment[gc_data2$segment == "UM"] <- 3
+gc_data2$segment[gc_data2$segment == "FM"] <- 4
+gc_data2$segment <- as.numeric(gc_data2$segment)
+san_seg2 <- c("M","LM","UM","FM")
+
+gc_data3$segment[gc_data3$segment == "M"] <- 1
+gc_data3$segment[gc_data3$segment == "LM"] <- 2
+gc_data3$segment[gc_data3$segment == "UM"] <- 3
+gc_data3$segment[gc_data3$segment == "FM"] <- 4
+gc_data3$segment <- as.numeric(gc_data3$segment)
+
+gc_data4$segment[gc_data4$segment == "M"] <- 1
+gc_data4$segment[gc_data4$segment == "LM"] <- 2
+gc_data4$segment[gc_data4$segment == "UM"] <- 3
+gc_data4$segment[gc_data4$segment == "FM"] <- 4
+gc_data4$segment <- as.numeric(gc_data4$segment)
+
+gc_data5$segment[gc_data5$segment == "M"] <- 1
+gc_data5$segment[gc_data5$segment == "LM"] <- 2
+gc_data5$segment[gc_data5$segment == "UM"] <- 3
+gc_data5$segment[gc_data5$segment == "FM"] <- 4
+gc_data5$segment <- as.numeric(gc_data5$segment)
+
+san_seg23 <- paste(san_seg2, " (", table(gc_data2$segment), ",",
+                   table(gc_data3$segment),")", sep="")
+
+season <- function(x)return (ifelse (x<=6, 1, ifelse(x<9, 2, 3)))
+
+##creating R date and Season columns
+gc_data$Rdate <- as.Date(paste(gc_data$month,
+                                gc_data$day,
+                                gc_data$year, sep="-"),
+                         format = "%m-%d-%Y")
+gc_data$Season <- season(gc_data$month)
+### not using `as.Date(gc_data$cdate, format = "%d/%m/%Y")`
+## cdata format not consistent
+##: prior to 2021, date format was "%d/%m/%Y",
+##  since 2021, the format was "%m/%d/%Y"
+##
+
+gc_data2$Rdate <- as.Date(paste(gc_data2$month,
+                                gc_data2$day,
+                                gc_data2$year, sep="-"),
+                          format = "%m-%d-%Y")
+gc_data2$Season <- season(gc_data2$month)
+
+gc_data3$Rdate <- as.Date(paste(gc_data3$month,
+                                gc_data3$day,
+                                gc_data3$year, sep="-"),
+                          format = "%m-%d-%Y")
+gc_data3$Season <- season(gc_data3$month)
+
+gc_data4$Rdate <- as.Date(paste(gc_data4$month,
+                                gc_data4$day,
+                                gc_data4$year, sep="-"),
+                          format = "%m-%d-%Y")
+gc_data4$Season <- season(gc_data4$month)
+
+gc_data5$Rdate <- as.Date(paste(gc_data5$month,
+                                gc_data5$day,
+                                gc_data5$year, sep="-"),
+                          format = "%m-%d-%Y")
+gc_data5$Season <- season(gc_data5$month)
+
+```
+The initial model was based on the N-mixture model because the response variable data (number of captures) are generated through two separate processes:
+1. Fish movement resulting in an unknown number of individuals present at the sampling site, and
+2. The imperfect data collection method (electrofishing).
+
+The N-mixture model explicitly models the two processes using a latent variable method.  Assuming there are $N$ individuals at the sampling site when electrofishing statred, the number of captures is a binomial random variable:
+$$
+y_i \mid N_i\sim Bin(p, N_i)
+$$
+where $p$ is the "detection" probability, the probability of capturing a fish when it is present.  The unknown number $N$ is a modeled as a Poisson random variable:
+$$
+N_i \sim Pois(\lambda_i)
+$$
+Because the sampling site is limited in size, we can define $\lambda_i$ as the expected number of individuals in the location. For a river, we define the population size in terms of population density ($\lambda$) measured in number of fish per kilometer. Hence, $\lambda_i = d_i\lambda$ where $d_i$ is the linear sampling distance along the river during the $i$th sampling event. The typical statistical solution to this mixture model problem is to fisrt write out the joint distribution of $y_i, p, N_i$, and $\lambda$:
+$$
+\Pr(Y=y_i, p, N_i, \lambda) = \Pr(Y=y_i\mid p, N_i)\Pr(N_i\mid\lambda)\Pr(\lambda)\Pr(p)
+$$
+Because $N_i$ is an unknown (latent) variable, we integrate $N_i$ out to obtain the marginal posterior density of $p, \lambda$. 
+$$
+\Pr(p, \lambda\mid y_i) = \int \Pr(Y=y_i\mid p, N_i)\Pr(N_i\mid\lambda)\Pr(\lambda)\Pr(p)dN_i
+$$
+As $N_i$ is an integer, the integral is now a summation:
+$$
+\Pr(p, \lambda\mid y_i) = \sum_{n=N_i}^\infty \Pr(Y=y_i\mid p, n)\Pr(n\mid\lambda)\Pr(\lambda)\Pr(p)
+$$
+The first term in the summation is a binomial probability function, the second term is a Poisson probability function, the the last two terms are priors of $\lambda$ and $p$.  
+
+First, we do not expect the observed response variable data have information for both $p$p and $\lambda$. $p$ is associated with the sampling method, while $\lambda$ is a characteristics of the target population. As a result, a meaningful prior distribution of $p$ should be quantified separately. Second, although the summation operation is relatively simple for a computer, the infinite upper bound is impossible computationally.  Realistically, we do not expect there would be more than 50 fish in the sampling site (roughly 200-500 meters river segment). We can use 50 or 25 as a reasonable upper bound. The log-likelihood is:
+$$
+LL = \log\left (\sum_{i-N_i}^{n_{max}} \Pr(Y=y_i\mid p, n)\times\Pr(n\mid\lambda)\right )
+$$
+Because
+$$
+\Pr(Y=y_i\mid p, n)\times\Pr(n\mid\lambda) = e^{\log(\Pr(Y=y_i\mid p, n))+ \log(\Pr(n\mid\lambda))}
+$$
+we can use the efficient computation function `log_sum_exp` to write the log-likelihood function
+```
+model{
+  int k;
+  pd ~ beta(alpha, beta);
+  for (i in 1:Nobs){
+    vector[Nmax-y[i]+1] temp;
+    for (j in y[i]:Nmax){
+      k = j-y[i]+1;
+      temp[k] = binomial_lpmf(y[i] | j, pd) +
+                poisson_lpmf(j | lambda[i]);
+    }
+    target += log_sum_exp(temp);
+  }
+}
+```
+This model is obviously wrong because the fish density along the river cannot be a constant. We initially divided the river into 4 segments and assumed constant density within a segment.  It is "less wrong."  When the model was implemented with four river segments, the parameter $\lambda$ is indexed by segments (i.e., $\lambda_j$, where $j$ is the segment). We assume that $\lambda_j$'s are exchangeable. That is, they are different but we do not know a priori how they differ from each other. As such, a natural Bayesian approach is to impose a single prior distribution for $\lambda_j$. Specifically, we assume $\log(\lambda_j)\sim N(\mu, \tau^2)$, where the common prior distribution ($N(\mu,\tau^2)$) is known as the hyper-distribution and its parameters ($\mu$ and $\tau^2$) hyper parameters. We used log-transformed $\lambda_j$ because it is the parameter of a Poisson distribution. Likewise, when the model was implemented for three years, the parameter $\lambda$ is indexed by year, and the three year-specific densities are assumed exchangeable. It has long been established in statistics literature (e.g., Efron and Morris 1977), that the hierarchical modeling estimated segment- and year-specific parameters (i.e., $\lambda_j$) are more accurate than the estimated parameters using data from individual units separately. Only recently, the hierarchical modeling approach has been introduced to ecologists (REFs).  
+
+The full N-mixture model is :
+```{R}
+## N-mixture stan model
+carp_BinPois <- "
+data {
+  int<lower=0> Nobs;
+  int<lower=0> Nmax;
+  int<lower=0> Nseg;
+  int<lower=0,upper=Nseg> segments[Nobs];
+  int y[Nobs];
+  real alpha;
+  real beta;
+  real f;
+}
+parameters {
+  real mu;
+  vector[Nseg] z;
+  real<lower=0,upper=10> sigma;
+  real<lower=0,upper=1> pd;
+}
+transformed parameters {
+  vector[Nseg] log_lambda;
+  real lambda[Nobs];
+  log_lambda = mu+sigma*z;
+  for (i in 1:Nobs)
+    lambda[i] = f*exp(log_lambda[segments[i]]);
+}
+model{
+  int k;
+  z ~ std_normal();
+  mu ~ normal(0,5);
+  sigma ~ normal(0,2.5);
+  pd ~ beta(alpha, beta);
+  for (i in 1:Nobs){
+    vector[Nmax-y[i]+1] temp;
+    for (j in y[i]:Nmax){
+      k = j-y[i]+1;
+      temp[k] = binomial_lpmf(y[i] | j, pd) +
+                poisson_lpmf(j | lambda[i]);
+    }
+    target += log_sum_exp(temp);
+  }
+}
+"
+fit1 <- stan_model(model_code=carp_BinPois)
+
+## prior parameters of the detection probability (beta(alp, bet))
+alp <- 86.20832
+bet <- 78.77657
+```
+The model is very slow. 
+```{R}
+####N-mixture model--do not run time comsuming
+
+stan_in1 <- function(data=gc_data, a=alp, b=bet,
+                     f=0.127/2, chains=nchains,
+                     Nmax=25){
+    y <- data$count
+    n <- length(y)
+    seg <- as.numeric(ordered(data$segment))
+    nseg <- max(seg)
+    stan_data <- list(Nobs=n, Nmax=Nmax, Nseg=nseg, f=f,
+                      segments=seg, y=y, alpha=a, beta=b)
+    stan_inits <- list()
+    for (i in 1:chains)
+        stan_inits[[i]] <- list(z=rnorm(nseg),
+                                mu=rnorm(1),
+                                sigma=runif(1), pd=runif(1))
+    stan_pars <- c("log_lambda", "mu", "sigma", "pd")
+    return(list(data=stan_data, inits=stan_inits,
+                pars=stan_pars, n.chains=chains))
+}
+
+## full data --do not run time consuming
+input.to.stan <- stan_in1(Nmax=25)
+##fit2keep <- sampling(fit1, data=input.to.stan$data,
+##                     init=input.to.stan$inits,
+##                     pars=input.to.stan$pars,
+##                     iter=niters,thin=nthin,
+##                     chains=input.to.stan$n.chains)
+##                     control=list(max_treedepth=25))
+
+##save(fit2keep, file="Stan_Nmixture.RData")
+#print(fit2keep)
+
+```
+Because the non-zero count values are mostly 1, there is not much information to quantify the Poisson model parameter. A simplified model in Qian et al (2022) transformed the count variable into a binary (captured or not captured) variable.  For the electronic fishing process, the capture of grass carp is a Bernoulli random variable:
+
+$$
+y_i \sim Bern(p_d\theta)
+$$
+where $y_i$ is the either 1 (capture) or 0 (no capture), $p_d$ is the electronic fishing detection probability, $\theta_i$ is the probability of at least one grass carp was present, and $Bern$ represents the Bernoulli distribution. The number of grass carp present in the sampling site ($N_i$) can be modeled as a Poisson random variable with a mean to be a product of the average fish density $\lambda$ (in number of fish per kilometer) and the size of the sampling site $f$ (in kilometers). That is $N_i \sim Pois(\lambda f)$, from which, we have the probability of at least one grass carp present:
+$$
+\theta = 1-e^{-\lambda f}
+$$
+The detection probability $p_d$ was estimated based on an independent depletion study. 
+```{R}
+### Binary formulation--do not run
+carp_BernBern <- "
+data {
+  int<lower=0> Nobs;
+  int<lower=0> Nseg;
+  int<lower=0,upper=Nseg> segments[Nobs];
+  int y[Nobs];
+  real a;
+  real b;
+  real f;
+}
+parameters {
+  vector[Nseg] z;
+  real<lower=0,upper=1> pd;
+  real mu;
+  real<lower=0,upper=10> sigma;
+}
+transformed parameters{
+  vector[Nseg] log_lambda;
+  real lambda[Nobs];
+  log_lambda = mu + z * sigma;
+  for (i in 1:Nobs)
+    lambda[i] = f*exp(log_lambda[segments[i]]);
+}
+model {
+  real temp2[2];
+  pd ~ beta(a, b);
+  z ~ std_normal();
+  mu ~ normal(0,5);
+  sigma ~ normal(0,2.5);
+  for (i in 1:Nobs){
+    temp2[1] = -lambda[i];
+    temp2[2] = log1m_exp(-lambda[i])+log(1-pd);
+    target += y[i]*(log1m_exp(-lambda[i]) + log(pd)) +
+              (1-y[i])*log_sum_exp(temp2);
+  }
+}
+"
+fit2<- stan_model(model_code=carp_BernBern)
+
+stan_in2 <- function(data=gc_data, a=alp, b=bet, f=0.127/2,
+                     chains=nchains){
+    y <- as.numeric(data$count>0)
+    n <- length(y)
+    seg <- as.numeric(ordered(data$segment))
+    nseg <- max(seg)
+    stan_data <- list(Nobs=n, Nseg=nseg, f=f,
+                      segments=seg, y=y, a=a, b=b)
+    stan_inits <- list()
+    for (i in 1:chains)
+        stan_inits[[i]] <- list(z=rnorm(nseg),
+                                mu=rnorm(1, -2),
+                                sigma=runif(1))
+    stan_pars <- c("log_lambda", "mu", "sigma", "pd")
+    return(list(data=stan_data, inits=stan_inits,
+                pars=stan_pars, n.chains=chains))
+}
+
+###--do not run
+input.to.stan <- stan_in2()
+##fit2keepBin <- sampling(fit2, data=input.to.stan$data,
+##                     init=input.to.stan$inits,
+##                     pars=input.to.stan$pars,
+##                     iter=niters,thin=nthin,
+##                     chains=input.to.stan$n.chains)
+##                     control=list(max_treedepth=25))
+## print(fit2keepBin)
+
+##save(fit2keep, fit2keepBin, file="sandusky_compare.RData")
+load("sandusky_compare.RData")
+## model comparison to justify the use of the simplified model
+```
+Run-time difference is two orders of magnitude (1500 versus 30).
+
+To justify the use of the simplified model, we made a simple comparison of the comparable model parameters:
+```{R}
+NM_coef <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                         pars=c("log_lambda", "mu", "sigma")))))
+NMbin_coef <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keepBin,
+                         pars=c("log_lambda", "mu", "sigma")))))
+
+Mixture_coef <- cbind(NM_coef, NMbin_coef)
+
+rownames(Mixture_coef) <- c("$\\log(\\lambda_1)$", "$\\log(\\lambda_2)$",
+                            "$\\log(\\lambda_3)$", "$\\log(\\lambda_4)$",
+                            "$\\mu$", "$\\sigma$")
+
+par(mar=c(3,3,1,1), mgp=c(1.25,0.125,0), tck=0.01)
+mlplot((Mixture_coef), xlim=c(-3,5), xlab="log density (fish/km)", cex=0.5)
+
+```
+
+This model satisfies Cox's three criteria of an applied statistical model. The response variable model is the Bernoulli distribution, the parameter $p_d$ describes the effectiveness of the sampling method and the parameter $\lambda$ is the parameter of interest describing the average fish density from which we can derive estimate of fish population. Although the division of the river segments were selected based on data availability (not ecological considerations), we can use this model to evaluate temporal trend of the population through annual sequential updating. The concept of updating upon new data is uniquely Bayesian. We treat the posterior distribution of model parameters at one time to be the priors for the next time step.  Because the grass carp population is under systematic removal pressure, we have to assume that the population changes every year. When we have multiple years of data, we often use a Bayesian hierarchical model to reflect such uncertainty -- annual populations are different but we are uncertain how they differ.  The hierarchical model can be summarized as a hyper-distribution of segment-specific densities. That is:
+
+$$
+\log(\lambda_j) \sim N(\mu_\lambda, \tau_\lambda^2)
+$$
+where the $\lambda_j$ is the parameter representing the mean population density in segment $j$. The hyper-parameter $\mu_\lambda$ is the log-mean of segment means and the hyper-parameter $\tau_\lambda^2$ is the among segment variance. In order to represent the changes of population over time, we can divide the data into segment ($j$) and year ($t$) and write the model for each year:
+
+$$
+\log(\lambda_{jt})  \sim  N(\mu_{\lambda,t}, \tau^2_{\lambda, t})
+$$
+As we don't have information about how the hyper-parameters vary by year, we can use a second layer of hierarchical model:
+
+$$
+\left (\mu_{\lambda,t}, \tau^2_{\lambda, t}\right) \sim \text{Normal-Iverse-Gamma}(\mu_0, n_0, \alpha, \beta)
+$$
+
+That is, we impose a common prior for the annual hyper-parameters $\mu_{\lambda,t}, \tau^2_{\lambda, t}$. The common prior is the normal-inverse-gamma distribution, the conjugate family of priors. In a Bayesian hierarchical model, we impose vague (or flat) priors for the hyper-parameters and use data (here multiple years of data) to estimate the parameters. Qian et al (2022) proposed to sequentially update a hierarchical model without waiting to have data from multiple years. Specifically, we use estimated hyper-parameters based on available data to estimate their prior parameters (i.e., $\mu_0, n_0, \alpha, \beta$) and with data from each additional year, we directly apply the Bayesian estimator (i.e., $\log(\lambda_{jt})\sim N(\mu_{\lambda,t}, \nu_{\lambda,t}^2)$) and update the hyper-parameters to derive the prior parameters for the next year.
+
+```{R}
+### Sequential updating
+#### 1. priors for hyper-parameters
+
+## prior parameter estimation using method of moments
+## be careful of the normal-gamma specification (in terms of sig2, not sig)
+## the inputs are MCMC samples of mu and sig2
+prior_pars_NIG <- function(mus, sigs2){
+  Ex <- mean(mus)
+  Vx <- sd(mus)^2
+  Esig2 <- mean(sigs2)
+  Vsig2 <- sd(sigs2)^2
+  return(list(mu0=Ex, beta=Esig2*(1+Esig2^2/Vsig2),
+              alpha=2+Esig2^2/Vsig2, lambda=Esig2/Vx))
+}
+
+prior_pars_IG <- function(sig2){
+    Esig2 <- mean(sig2)
+    Vsig2 <- sd(sig2)^2
+    return(list(alpha=2+Esig2^2/Vsig2, beta=Esig2*(1+Esig2^2/Vsig2)))
+}
+```
+In a way, we summarize previous years information in the prior and update them one year at a time. Each time, not only we have the year-specific estimate but also updates the cumulative information.
+```{R}
+##### Single detection probability
+BernBern_seq <- "
+data {
+  int<lower=0> Nobs;
+  int<lower=0> Nseg;
+  int<lower=0,upper=Nseg> segments[Nobs];
+  int<lower=0,upper=1> y[Nobs];
+  real<lower=0> a;
+  real<lower=0> b;
+  real<lower=0> f[Nobs];
+  real<lower=0> hyp_alpha;
+  real<lower=0> hyp_beta;
+  real hyp_mu;
+  real<lower=0> hyp_n0;
+}
+parameters {
+  vector[Nseg] z;
+  real<lower=0,upper=1> pd;
+  real mu;
+  real<lower=0,upper=10> sigma2;
+}
+transformed parameters{
+  vector[Nseg] log_lambda;
+  real lambda[Nobs];
+  log_lambda = mu + z * sqrt(sigma2);
+  for (i in 1:Nobs)
+    lambda[i] = f[i]*exp(log_lambda[segments[i]]);
+}
+model {
+  real temp2[2];
+  pd ~ beta(a, b);
+  z ~ std_normal();
+  sigma2 ~ inv_gamma(hyp_alpha,hyp_beta);
+  mu ~ normal(hyp_mu,sqrt(sigma2/hyp_n0));
+  for (i in 1:Nobs){
+    temp2[1] = -lambda[i];
+    temp2[2] = log1m_exp(-lambda[i])+log(1-pd);
+    target += y[i]*(log1m_exp(-lambda[i]) + log(pd)) +
+              (1-y[i])*log_sum_exp(temp2);
+  }
+}
+"
+fit3<- stan_model(model_code=BernBern_seq)
+```
+
+Now let's implement the sequential updating
+```{R}
+## organizing input data and initial values
+seqinput1 <- function(data=gc_data2, a=alp, b=bet,
+                      priors=hyp_prior, chains=nchains,
+                      Seg="segment", sub=NULL, f=0.127/2, varyingF=T){
+    if (!is.null(sub)) data <- data[sub,]
+    y <- as.numeric(data$count>0)
+    n <- length(y)
+    seg <- as.numeric(ordered(data[,Seg]))
+    nseg <- max(seg)
+    if (varyingF) {
+        f <- data$efish_distance/2000
+        f[is.na(f)] <- mean(f, na.rm=T)
+    } else {
+        f <- rep(f, n)
+    }
+    stan_data <- list(Nobs=n, Nseg=nseg, f=f,
+                      segments=seg, y=y, a=a, b=b,
+                      hyp_mu=priors$mu0, hyp_n0=priors$lambda,
+                      hyp_alpha=priors$alpha, hyp_beta=priors$beta)
+    stan_inits <- list()
+    for (i in 1:chains)
+        stan_inits[[i]] <- list(z=rnorm(nseg),
+                                mu=rnorm(1, -2),
+                                sigma2=runif(1))
+    stan_pars <- c("log_lambda", "mu", "sigma2", "pd")
+    return(list(data=stan_data, inits=stan_inits,
+                pars=stan_pars, n.chains=chains))
+}
+```
+Sequential updating:
+```{R}
+### 2020 by Segment
+hyppars <- rstan::extract(fit2keepBin, pars=c("mu","sigma"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma^2)
+input.to.stan <- seqinput1(data=gc_data2, sub=gc_data2$year==2020)
+fit2keepSeg_2020 <- sampling(fit3, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                             control=list(max_treedepth=25))
+print(fit2keepSeg_2020)
+
+### 2021 by Segment
+hyppars <- rstan::extract(fit2keepSeg_2020, pars=c("mu","sigma2"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma2)
+input.to.stan <- seqinput1(data=gc_data2, sub=gc_data2$year==2021)
+fit2keepSeg_2021 <- sampling(fit3, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                             control=list(max_treedepth=25))
+print(fit2keepSeg_2021)
+
+### 2022 by Segment
+hyppars <- rstan::extract(fit2keepSeg_2021, pars=c("mu","sigma2"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma2)
+input.to.stan <- seqinput1(data=gc_data4)
+fit2keepSeg_2022 <- sampling(fit3, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                             control=list(max_treedepth=25))
+print(fit2keepSeg_2022)
+```
+We can change segment to season to study the seasonal pattern of population sizes as a way to understand the fish's movement within a year.  All we need to do is to enter `Seg="Season"` when running the function `seqinput1`.
+
+Instead of running the model separately by segments and by season, we can also make the model more complicated by including season as a nested factor under segments.  This means that each of the 4 segment means are split into three seasonal components, leading to 12 segment-season means.  Let $j$ be the index of segments and $s$ be the index of season. The 12 means can be denoted as $\log(\lambda_{js})$. The nested model can be expressed as:
+$$
+\log(\lambda_{js}) \sim N(\mu_j, \sigma_2^2)
+$$
+where, $\mu_j$ is the segment mean and $\sigma_2^2$ is the among season variance.  The segment means are than modeled as random variables from the hyper distribution $\mu_j \sim N(\mu_{hyp}, \tau^2_{hyp})$. I used two indicators in the Stan model to make the program more efficient. 
+```{R}
+BernBern_seq2 <- "
+data {
+  int<lower=0> Nobs;
+  int<lower=1> Nseg;
+  int<lower=1> Nsn;
+  int<lower=1> Nsegsn;
+  int<lower=1,upper=Nsegsn> indij[Nobs];
+  int<lower=1,upper=Nseg> indj[Nsegsn];
+  int<lower=0,upper=1> y[Nobs];
+  real<lower=0> a;
+  real<lower=0> b;
+  real<lower=0> f[Nobs];
+  real<lower=0> hyp_alpha;
+  real<lower=0> hyp_beta;
+  real hyp_mu;
+  real<lower=0> hyp_n0;
+}
+parameters {
+  vector[Nsegsn] zij;
+  vector[Nseg] zi;
+  real<lower=0,upper=1> pd;
+  real m;
+  real<lower=0,upper=10> sigma2;
+  real<lower=0,upper=10> tau2;
+}
+transformed parameters{
+  vector[Nsegsn] log_lambda;
+  real lambda[Nobs];
+  vector[Nseg] mu;
+  mu = m+zi*sqrt(tau2);
+  for (i in 1:Nsegsn)
+    log_lambda[i] = mu[indj[i]] + zij[i] * sqrt(sigma2);
+  for (i in 1:Nobs)
+    lambda[i] = f[i]*exp(log_lambda[indij[i]]);
+}
+model {
+  real temp2[2];
+  pd ~ beta(a, b);
+  zij ~ std_normal();
+  zi ~ std_normal();
+  tau2 ~ inv_gamma(hyp_alpha,hyp_beta);
+  m ~ normal(hyp_mu, sqrt(tau2/hyp_n0));
+  for (i in 1:Nobs){
+    temp2[1] = -lambda[i];
+    temp2[2] = log1m_exp(-lambda[i])+log(1-pd);
+    target += y[i]*(log1m_exp(-lambda[i]) + log(pd)) +
+              (1-y[i])*log_sum_exp(temp2);
+  }
+}
+"
+
+fit4<- stan_model(model_code=BernBern_seq2)
+```
+One is `indij`, matching each observation to the 12 segment-season combinations, and the other is `indj` matching the 12 segment-season combinations to segments.  With the index, I can define $\log(\lambda_{js})$ as a (one-dimension) vector instead of a (two-dimension) matrix.  Some care must be taken in organizing input data:
+```{R}
+seqinput2 <- function(data=gc_data4, a=alp, b=bet,
+                      priors=hyp_prior, chains=nchains,
+                      sub=NULL){
+    if (!is.null(sub)) data <- data[sub,]
+    y <- as.numeric(data$count>0)
+    n <- length(y)
+    segCh <- data$segment
+    seg <- as.numeric(ordered(segCh))
+    snCh <- data$Season
+    sn <- as.numeric(ordered(snCh))
+    temp <- paste(segCh, snCh)
+    indij1 <- as.numeric(ordered(temp) )
+    indijtemp <- sort(unique(temp))
+    indij2 <- as.numeric(ordered(indijtemp))
+    indj <- as.numeric(ordered(substring(indijtemp, 1, 1)))
+    nsegsn <- max(indij2)
+    nseg <- max(seg)
+    nsn <- max(sn)
+    f <- data$efish_distance
+    f[is.na(f)] <- mean(f, na.rm=T)
+    stan_data <- list(Nobs=n, Nseg=nseg, Nsn=nsn, Nsegsn=nsegsn,
+                      indij=indij1, indj=indj,
+                      y=y, a=a, b=b, f=f/2000,
+                      hyp_mu=priors$mu0, hyp_n0=priors$lambda,
+                      hyp_alpha=priors$alpha, hyp_beta=priors$beta)
+    stan_inits <- list()
+    for (i in 1:chains)
+    stan_inits[[i]] <- list(zij=rnorm(nsegsn), zi=rnorm(nseg),
+                            pd=runif(1), m=rnorm(1, -2),
+                            tau2=runif(1), sigma2=runif(1))
+    stan_pars <- c("log_lambda", "mu", "m", "sigma2", "tau2", "pd")
+    return(list(data=stan_data, inits=stan_inits,
+                pars=stan_pars, n.chains=chains))
+}
+
+### 2020 nested
+hyppars <- rstan::extract(fit2keepBin, pars=c("mu","sigma"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma^2)
+input.to.stan <- seqinput2(data=gc_data2, sub=gc_data2$year==2020)
+fit2keepNested2020 <- sampling(fit4, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                     control=list(max_treedepth=25))
+print(fit2keepNested2020)
+
+### 2021 nested
+hyppars <- rstan::extract(fit2keepNested2020, pars=c("mu","sigma2"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma2)
+input.to.stan <- seqinput2(data=gc_data2, sub=gc_data2$year==2021)
+fit2keepNested2021 <- sampling(fit4, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                     control=list(max_treedepth=25))
+print(fit2keepNested2021)
+
+### 2022 nested
+hyppars <- rstan::extract(fit2keepNested2021, pars=c("mu","sigma2"))
+hyp_prior <- prior_pars_NIG(mus=hyppars$mu, sigs2=hyppars$sigma2)
+input.to.stan <- seqinput2(data=gc_data4)
+fit2keepNested2022 <- sampling(fit4, data=input.to.stan$data,
+                               init=input.to.stan$inits,
+                               pars=input.to.stan$pars,
+                               iter=niters,thin=nthin,
+                               chains=input.to.stan$n.chains)
+##                     control=list(max_treedepth=25))
+print(fit2keepNested2022)
+
+```
+Running the model is not the most challenging task, communicating the results to ecologists is. I tried some plots but am not entirely happy with them. 
+```{R}
+load("seqUpdate2020_2022.RData")
+coef2020seg <- extract(fit2keepSeg_2020, pars=c("log_lambda","mu"))
+segCoefrv20 <- rvsims(as.matrix(as.data.frame(coef2020seg)))
+coef2020sn <- extract(fit2keepSn_2020, pars=c("log_lambda","mu"))
+snCoefrv20 <- rvsims(as.matrix(as.data.frame(coef2020sn)))
+coef2020nested <- extract(fit2keepNested2020, pars=c("log_lambda","mu","m"))
+nestCoefrv20 <- rvsims(as.matrix(as.data.frame(coef2020nested)))
+coef2021seg <- extract(fit2keepSeg_2021, pars=c("log_lambda","mu"))
+segCoefrv21 <- rvsims(as.matrix(as.data.frame(coef2021seg)))
+coef2021sn <- extract(fit2keepSn_2021, pars=c("log_lambda","mu"))
+snCoefrv21 <- rvsims(as.matrix(as.data.frame(coef2021sn)))
+coef2021nested <- extract(fit2keepNested2021, pars=c("log_lambda","mu", "m"))
+nestCoefrv21 <- rvsims(as.matrix(as.data.frame(coef2021nested)))
+coef2022seg <- extract(fit2keepSeg_2022, pars=c("log_lambda","mu"))
+segCoefrv22 <- rvsims(as.matrix(as.data.frame(coef2022seg)))
+coef2022sn <- extract(fit2keepSn_2022, pars=c("log_lambda","mu"))
+snCoefrv22 <- rvsims(as.matrix(as.data.frame(coef2022sn)))
+coef2022nested <- extract(fit2keepNested2022, pars=c("log_lambda","mu", "m"))
+nestCoefrv22 <- rvsims(as.matrix(as.data.frame(coef2022nested)))
+
+logLambdaSeg <- rvmatrix(c(segCoefrv20[1:4], segCoefrv21[1:4], segCoefrv22[1:4]), ncol=3)
+musSeg <- c(segCoefrv20[5], segCoefrv21[5], segCoefrv22[5])
+tikz(file="segbyyear.tex", height=5, width=4.5, standAlone=F)
+par(mar=c(3, 1, 1, 2), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(exp(logLambdaSeg), xlab="Segments by Year", col=1:3)
+dev.off()
+
+
+names(musSeg) <- c( "2020", "2021", "2022")
+##abline(v=summary(musSeg)$mean, lty=1:3)
+##legend(x="topleft",lty=1:3, legend=c("2020","2020-2021","2020-2022"), bty="n")
+
+### calculating number of fish
+seg_size <- c(6.44, 6.44, 8.05, 6.44)
+seg_num <- exp(logLambdaSeg[,])*seg_size
+
+seg_num20 <- simapply(seg_num[,1], sum)
+seg_num21 <- simapply(seg_num[,2], sum)
+seg_num22 <- simapply(seg_num[,3], sum)
+
+
+seg_numYr <- c(seg_num20, seg_num21,seg_num22)
+names(seg_numYr)  <- c("2020","2021","2022")
+par(mar=c(3, 2, 1, 1), mgp=c(1.25,0.125,0), tck=-0.01)
+mlplot(seg_numYr, xlab="estimated annual size", xlim=c(0, 150))
+
+par(mar=c(3, 2, 1, 1), mgp=c(1.25,0.125,0), tck=-0.01)
+mlplot(musSeg, xlab=expression(paste("estimated population index (",mu, ")", sep="")))
+### end of annual numbers 
+
+logLambdaSn <- rvmatrix(c(snCoefrv20[1:3], snCoefrv21[1:3], snCoefrv22[1:3]), ncol=3)
+musSn <- c(snCoefrv20[4], snCoefrv21[4], snCoefrv22[4])
+par(mar=c(3, 1, 1, 2), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(logLambdaSn, xlab="Seasons by Year", xlim=c(-4.5, 2))
+##abline(v=summary(musSn)$mean, lty=1:3)
+##legend(x="topleft",lty=1:3, legend=c("2020","2020-2021","2020-2022"), bty="n")
+
+logLambdaNst  <- list(rvmatrix(nestCoefrv20[1:12], ncol=3),
+                      rvmatrix(nestCoefrv21[1:12], ncol=3),
+                      rvmatrix(nestCoefrv22[1:12], ncol=3))
+musNst <- rvmatrix(c(nestCoefrv20[13:16], nestCoefrv21[13:16], nestCoefrv22[13:16]), ncol=3)
+mNst <- c(nestCoefrv20[17], nestCoefrv21[17], nestCoefrv22[17])
+
+par(mar=c(3, 1, 1, 2), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(musNst, xlab="Segments by Year, nested model", xlim=c(-4.5, 3))
+##abline(v=summary(mNst)$mean, col=2:4)
+
+par(mar=c(3, 1, 1, 2), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(musNst, xlab="Segments by Year, nested model", xlim=c(-4.5, 3))
+abline(v=summary(mNst)$mean, col=2:4)
+
+par(mar=c(3, 1, 1, 2), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(musNst, xlab="Segments by Year", xlim=c(-4.5, 3))
+abline(v=summary(mNst)$mean, col=2:4)
+
+par(mfrow=c(1,3), mar=c(3, 1, 1, 0.5), mgp=c(1.25,0.125,0), tck=-0.015)
+mlplot(logLambdaNst[[1]], xlab="2020", xlim=c(-6,5))
+##abline(v=summary(musNst[,1])$mean, col=2:5)
+mlplot(logLambdaNst[[2]], xlab="2021", xlim=c(-6,5))
+##abline(v=summary(musNst[,2])$mean, col=2:5)
+mlplot(logLambdaNst[[3]], xlab="2022", xlim=c(-6,5))
+##abline(v=summary(musNst[,3])$mean, col=2:5)
+
+par(mfrow=c(3,1), mar=c(1.5, 2, 1, 2), mgp=c(1.25,0.15,0), tck=-0.015)
+mlplot(logLambdaNst[[1]], xlab="", xlim=c(-6,4.5))
+abline(v=summary(mNst[1])$mean, col="gray")
+text(x=-5,y=4, "2020")
+mlplot(logLambdaNst[[2]], xlab="", xlim=c(-6,4.5))
+abline(v=summary(mNst[2])$mean, col="gray")
+text(x=3,y=4, "2021")
+mlplot(logLambdaNst[[3]], xlab="", xlim=c(-6,4.5))
+abline(v=summary(mNst[3])$mean, col="gray")
+text(x=3,y=4, "2022")
+
+```
