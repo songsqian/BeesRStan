@@ -1,0 +1,895 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+source(paste(rootDIR, "FrontMatter.R", sep="/"))
+
+dataDIR <- paste(rootDIR, "Data", sep="/")
+require(rstan)
+packages(rv)
+packages(car)
+packages(maptools)
+packages(maps)
+packages(mapproj)
+rstan_options(auto_write = TRUE)
+options(mc.cores = min(c(parallel::detectCores(), 8)))
+
+nchains <-  min(c(parallel::detectCores(), 8))
+niters <- 5000
+nkeep <- 2500
+nthin <- ceiling((niters/2)*nchains/nkeep)
+```
+## Hierarchical Models 
+A simple start -- setting environmental standard in the Everglades
+
+Richardson et al (2007) reported a mesocosm study of wetland ecosystem responding to elevated phosphorous (P) input. The study was conducted in the Everglades of South Florida. A phosphorus gradient was created using a series of artificial flumes, from which changes in the mesocosm ecosystem were observed. Researchers calculated total P (TP) thresholds that will induce large changes in algae, macroinvertebrates, and macrophytes communities using 12 biological indicators. These indicators represent a combination of how fast the indicators would respond to changes in TP concentrations. They reported the 12 threshold means and their 95% intervals. We used the 95% intervals (typically mean plus/minus 2 standard error) to derive the standard deviation of the estimated means.
+```{R}
+y.hat <- c(19.2,  13,  13, 12.4, 8.2, 19.9, 18.3,
+           15.6, 14.8, 14.5, 23.5, 15.3)
+sigma.hat <- c( 1.6, 6.4, 9.6, 16.2, 0.8,  4.2,  1.2,
+                0.9,  2.1, 10.2, 26.3, 10.3)/4
+
+metrics <- c("Mat Cover","BCD","% Tolerant Species","% Sensitive Species",
+             "% Predators","% Crustacean","% Oligchaeta","Total Utricularia",
+             "Utricularia purpurea","% diatom (stem)","% diatom (plexi)",
+             "% diatom (mat)")
+metricsTEX <- c("Mat Cover","BCD","\\% Tol Sp",
+                "\\% Sen Sp", "\\% Pred","\\% Crust",
+                "\\% Oligchaeta","Tot Utr","Utr P.",
+                "\\% diatom (stem)","\\% diatom (plexi)",
+                "\\% diatom (mat)")
+
+par(mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
+plot(range(y.hat-2*sigma.hat, y.hat+2*sigma.hat),
+     c(1,length(y.hat)), type="n",
+     xlab="TP Threshold", ylab=" ", axes=F)
+axis(1, cex.axis=0.75)
+axis(2, at=1:length(y.hat), labels=metrics, las=1, cex.axis=0.75)
+segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
+         y0=1:length(y.hat), y1=1:length(y.hat), lwd=3)#,
+#         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+segments(x0=y.hat+2*sigma.hat, x1=y.hat-2*sigma.hat,
+         y0=1:length(y.hat), y1=1:length(y.hat), lwd=1)#,
+#         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+points(x=y.hat, y=1:length(y.hat))
+abline(v=15)
+
+```
+
+Richardson et al (2007) recommended that the TP concentration standard should be 15 $\mu$g/L, close to the average of the 12 means and the mean of Utricularia purpurea, a keystone species of the Everglades wetland ecosystem.  Because the legal requirement of setting a TP standard to protect "the natural balance of flora and fauna of the Everglade" is scientifically vague, a threshold based on one species is always less convincing, even though the value is close to the average of the change points of all metrics examined.  Each metric represents a specific aspect of the ecosystem (individual species or species groups).  These species-specific indicators by themselves cannot describe the natural balance at the ecosystem level.  Suppose that there are a total of $n$ indicators to represent the Everglades wetland ecosystem and we have estimates of thresholds of these indicators ($\phi_j, j=1,\cdots,n$).  Although each individual threshold cannot adequately represent the natural imbalance, the distribution of all thresholds should provide a quantitative summary of how TP concentration levels would affect the ecosystem as a whole. Because the 12 metrics were carefully selected to represent the Everglades wetland ecosystems, ecosystem-level threshold distribution can be estimated from these individual-level thresholds.  Instead of using the average of the estimated change points of the 12 metrics, we integrate these estimates using a hierarchical model to properly represent the estimation uncertainty we have about these estimates.
+
+The data we have are the estimated change point $\hat{\phi}_j$ and its standard deviation $\hat{\sigma}_j$. These two numbers provide an indicator-level model:
+$$
+  \hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j).
+$$
+Information in the data is summarized in the estimated mean and standard deviation $\hat{\phi}_j$ and $\hat{\sigma}_j$.  When we have no additional information to determine the relative magnitude of the threshold for different metrics, we can assume that $\theta_j$'s can be modeled as follows
+$$
+\theta_j \sim N(\mu, \tau^2),
+$$
+that is, assuming a common prior distribution for $\theta_j$.  The above two equations form the simplest hierarchical model. It is the natural extension of the Stein's paradox of the 1960s.  Here we have 12 thresholds to estimate at the same time and Stein's paradox told us that estimating them one at a time is mathematically inadmissible. Shrinking these individually estimated means towards the overall mean can always improve the overall estimation accuracy.  Statistical development since Stein's paradox has shown the value of hierarchical modeling in applied fields. In my opinion, hierarchical modeling is a key to address environmental and ecological data analysis problems where variables representing different levels of spatial, temporal, and organizational aggregations. When data analysis crossing different levels of aggregation, the hierarchical structure of the aggregation can be properly modeled under a hierarchical modeling framework. Without properly addressing data hierarchy, we can be tripped by Simpson's paradox. 
+
+This common prior distribution in the Everglades problem here reflects (1) our understanding that $\theta_j$s are likely to be different for different metrics, and (2) our lack of understanding on how $\theta_j$s are different from each other.  The variance parameter $\tau^2$ is the between metric variance.  we expanded the meaning of $\tau^2$ to be the variance among all possible metric means (not just the 12 metrics represented in the data).  This model links all metrics together through the common prior distribution $N(\mu,\tau^2)$.  As we have no prior knowledge of $\mu$ and $\tau^2$, we will use Stan default weakly informative priors.  Viewing from the perspective of modeling individual metrics, each time a metric mean is modeled (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$) we are using a Bayesian estimation and the unknown metric mean $\theta_j$ is given a prior distribution. The prior distribution parameters in this case are estimated based on data from other metrics.  If we have another metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation using informative prior.  The informative prior is derived from  other similar quantities.  This interpretation gives me the idea of treating a prior as the distribution of similar quantities. Mathematically we call these similar quantities exchangeable units. Similar studies from exchangeable units (e.g., eutrophication studies in different lakes) are often known as parallel studies. Exchangeable units can be spatial (e.g., different lakes, different eco-regions when study climate change impacts), temporal (observations from the same location over different seasons or years), and, as in this example, organizational (different metrics representing different aspects of an ecosystem).  I find that we can think any environmental and ecological data analysis problem as a hierarchical modeling problem.   
+
+Back to the Everglades example, we illustrate the famed shrinkage effect of the hierarchical modeling, which is responsible for the improved overall estimation accuracy.  (Here is an intuitive explanation of why shrinking estimates towards the overall mean would improve overall accuracy. When we say that an estimate has error, we mean that the estimated value is either too high or too low. With only one parameter to estimate, we have no reason to believe the estimate is too high or too low. As a result, we prefer an unbiased estimator.  On average we are right. When we have estimates of the same parameter from multiple exchangeable units, the overall mean of these means provides a reasonable reference on whether an individual estimate is likely too high or too low. As a result, shrinking these estimates towards the overall mean is more likely to improve these estimates.)
+
+A common computation problem in hierarchical model is the potentially strong correlation among the multiple means (i.e., $\theta_j$'s), especially when the number of exchangeable units is small.  The correlation is often a result of the difficulty in quantifying the hyper-parameters ($\mu, \sigma^2$). The Neal's funnel is a common phenomenon.  As we've seen earlier, we can reparameterize the model: instead of directly sampling $\theta_j$ as random variables, we use the relationship between a normal random variable with mean $\mu$ and standard deviation $\tau$ and the standard normal random variable $z \sim N(0,1)$:
+$$
+\theta_j = \mu + \tau \times z_j.
+$$
+By defining $\theta_j$ as a transformed variable, we improve the Stan model's computatiopnal performance by avoiding directly sampling from them:
+```{r}
+everg_stan <- "
+data {
+  int<lower=0> J; // number of schools
+  real y[J]; // estimated treatment effects
+  real<lower=0> sigma[J]; // s.e. of effect estimates
+}
+parameters {
+  real mu;
+  real<lower=0> tau;
+  real eta[J];
+}
+transformed parameters {
+  real theta[J];
+  for (j in 1:J)
+    theta[j] = mu + tau * eta[j];
+}
+model {
+  eta ~ normal(0, 1);
+  y ~ normal(theta, sigma);
+}
+"
+
+fit1 <- stan_model(model_code = everg_stan)
+```
+As usual, we first organize input data and initial values
+```{R}
+everg_in <- function(y=y.hat, sig=sigma.hat, n.chains=nchains){
+  J <- length(y)
+  data <- list(y=y, sigma=sig, J=J)
+  inits<-list()
+  for (i in 1:n.chains)
+    inits[[i]] <- list(eta=rnorm(J), mu=rnorm(1), tau=runif(1))
+  pars <- c("theta", "mu", "eta", "tau")
+  return(list(data=data, inits=inits, pars=pars, chains=n.chains))
+}
+
+input.to.stan <- everg_in()
+fit2keep <- sampling(fit1, data=input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars=input.to.stan$pars,
+                     iter=niters,thin=nthin,
+                     chains=input.to.stan$chains,
+                     control=list(max_treedepth=25))
+
+print(fit2keep)
+
+```
+Now processing Stan results
+```{R}
+everg_fit1 <- rvsims(as.matrix(
+    as.data.frame(rstan::extract(fit2keep, permuted=T))))
+
+## shrinkage effect
+everg_theta <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                             permuted=T,
+                                                             pars="theta"))))
+everg_mu <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                          permuted=T,
+                                                          pars="mu"))))
+everg_tau <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                           permuted=T,
+                                                           pars="tau"))))
+theta <- summary(everg_theta)
+mu <- summary(everg_mu)
+tau <- summary(everg_tau)
+
+par(mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
+plot(range(y.hat-1*sigma.hat, y.hat+1*sigma.hat),
+     c(1,length(y.hat)), type="n",
+     xlab="TP Threshold", ylab=" ", axes=F)
+axis(1, cex.axis=0.75)
+axis(2, at=seq(1,length(y.hat)), labels=metrics, las=1, cex.axis=0.75)
+segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
+         y0=seq(1,length(y.hat))-0.125,
+         y1=seq(1,length(y.hat))-0.125,
+         lwd=1, lty=2)
+## col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4),
+segments(x0=theta$"25%", x1=theta$"75%",
+         y0=(seq(1,length(y.hat)))+0.125,
+         y1=(seq(1,length(y.hat)))+0.125)
+##         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+points(x=y.hat, y=seq(1,length(y.hat))-0.125, cex=0.5)
+##       col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4),
+points(x=theta$mean, y=0.125+(seq(1,length(y.hat))), cex=0.5)
+##       pch=16,col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+abline(v=mu$mean)
+
+```
+How should we determine the TP concentration standard? 
+
+It is mostly an ecological and environmental management question. Statistically, the question is whether we derive the standard based on the overall mean ($\mu$) or the distribution of all metrics: between the posterior distribution of $\mu$ and the hyper-distribution.  
+```{R}
+## mu versus N(mu, tau)
+mu_tau <- rvnorm(1, everg_mu, everg_tau)
+p1 <- hist(sims(everg_mu)[,1], freq=F)
+p2 <- hist(sims(mu_tau)[,1], nclass=35)
+
+par(mar=c(3, 3, 1, 0.5), mgp=c(1.25,0.125,0), tck=0.01)
+plot(p1, col=rgb(0.1,0.1,.1,1/4),
+     xlim=c(0,30), ylim=c(0,0.35), freq=F,
+     xlab="TP Threshold ($\\mu$g/L)", main="")  # first histogram
+plot(p2, col=rgb(.7,.7,.7,1/4),
+     xlim=c(0,30), ylim=c(0,0.35), freq=F, add=T)  # second
+box()
+
+c(quantile(sims(everg_mu), prob=0.05), quantile(sims(mu_tau), prob=0.05))
+```
+## Hierarchical Structure and Big Data
+If we define "big data" as data from multiple sources and represent multiple levels of aggregation, most data we use in our work are big data.  For us, the age of big data means the age of hierarchical modeling.  When we don't properly address the hierarchical structure of the data, big data can almost always lead to misleading conclusions.
+
+### The US National Lake Assessment data
+Qian et al (2019) discussed several studies published using data from US EPA's National Lakes Assessment program (NLA). Under NLA, over 3000 lake throughout the 48 contiguous states were surveyed in 2007 and 2012 to collect a large number of variables for assessing ecological status  of the nations lakes. Each visited lake was visited at most two times. 
+
+EPA researchers published a number of papers using NLA data to derive national nutrient criteria. They typically use lake mean values of relevant variables to establish empirical relationship between variables representing ecological responses (e.g., chlorophyll a and microsystin concentrations) and variables representing nutrient enrichment (e.g., TP and TN concentrations). Qian et al (2019) suggested that such practice is prone to the trap of Simpson's paradox (correlation established at one level of aggregation can be very different from the same correlation at a different level of aggregation).  Simpson's paradox is relevant because the nutrient criteria are established at a national (spatial) aggregated level, whereas the resulting criteria must be implemented at individual lakes over time.  
+
+Statistically speaking, we must properly model the hierarchical structure represented by the data.  By data hierarchical structure, we mean the observation values and their attributes.  In a typical dataset (think about an Excel spreadsheet format), we arrange data in a two dimensional array, rows representing observations and columns representing variables.  In R, we use data frame (the most commonly used format).  In both cases, variables can be classified into measured variables and identification variables.  Measured variables are typically numeric and identification variables are categorical in nature.  For example, `chla`, `tp`, and `tn` in our data are measured variables and `id` is identification variable.  With `id`, we group measured variable into parallel units.  (The concept of measured and identification variables is explicitly used in packages from the `tidyverse` family.)  
+
+Suppose that we have only measured `chla` from these lakes and the lake ids do not provide lake-specific information. If we want to know the average `chla` values for these lakes, we can assume `log_chla` values can be approximated by the normal distribution and make statistical inference about `chla` from lake $j$ using the model:
+$$
+\log(chla_{ij}) \sim N(\mu_j, \sigma^2_j)
+$$
+The parameters $\mu_j$ and $\sigma^2_j$ will be estimated when we have data.  In Bayesian statistics, we need to use priors for these unknown parameters. In most cases, we are largely interested in the mean parameters.  For a mean parameter, the central limit theorem suggests that the prior of $\mu_j$ should also be a normal distribution.  
+$$
+\mu_j \sim N(\theta, \tau^2)
+$$
+That is, we must impose priors for all 27 lakes in this problem. Given that we have no specific information about these lakes, we do not know how to determine the likely relative magnitudes of `chla` in these lakes. In other words, we have no reason to give a high (or lower) prior mean for lake 1 than the prior mean for lake 2. As a result, to reflect our ignorance of the relative magnitudes among the lakes, we are compelled to assign a common prior to all 27 lakes. The above equation is the manifestation of our ignorance: we know that lakes mean `chla`s are likely different, but not how they are different from each other. Without further information, we use non-informative priors for $\theta$ and $\tau^2$.  The hierarchical model is a generalization of Stein's paradox (and James-Stein estimator) in classical statistics.  The consequence of imposing this common prior is the shrinkage effect, illustrated in the Everglades example.  The lakes are known to be exchangeable with respect to lake-specific $\mu_j$.  
+
+To illustrate this problem, Qian et al (2019) use data from lakes shared by NLA and another large lake database (LAGOS) to compare how Simpson's paradox can be manifested in lake eutrophication studies.
+
+The data: USA-NLA and LAGOS. We pick lakes shared in the two data bases.
+
+```{R, echo=F}
+### loading pre-compiled data
+load("nla_lg_data.RData")
+
+sharedLakes <- structure(list(
+  GNIS_NAME = c("Pomme de Terre Lake", "Clearwater Lake", 
+"Trimble Wildlife Lake", "Lake Sainte Louise", "Cuba Lake", "Indian Lake", 
+"Sunnen Lake", "Yawgoo Pond", "Lake Northwood", "Fourche Lake", 
+"Lake Wawwanoka", "Edwin A Pape Lake", "Crooked Lake", "Loggers Lake", 
+"Slack Reservoir", "Keech Pond", "Belleville Pond", NA, "School House Pond", 
+NA, "North Twin Lake", NA, "Gorton Pond", "Little Wall Lake", 
+"Lake Ahquabi", "Flat River Reservoir", NA, "Lake Wood", "Lake Greeley", 
+"Sebasticook Lake", "Chapman Pond", "Big Reed Pond", "Stump Pond", 
+NA, "Gardner Pond", "Denny Pond", "Starlight Lake", "Lackawanna Lake", 
+"Raystown Lake", "Stoughton Lake", "Pleasant Lake", "Island Pond", 
+"Upper Pond", "Fourth Debsconeag Lake", NA, "Hinckleys Pond", 
+"West Hill Pond", "Roseland Lake", "Lake Waramaug", NA, "Akron City Reservoir", 
+"Atwood Lake", NA, "Long Lake", NA, "Kiser Lake", "Lake Loramie", 
+"Aspen Lake", "Pachaug Pond", "Wononpakook Lake", "Lake Kenosia", 
+"Saddle Lake", "Bass Lake", "Donnell Lake", "Crystal Lake", NA, 
+NA, "Belmont Lake"), GNIS_ID.y = c("00724726", "00749381", NA, 
+"00756662", "00947916", "00736167", "00758349", "01217933", "00765060", 
+"00754392", "00728432", "00762888", NA, "00758306", "01218666", 
+"01218885", "01218074", "02046066", "01217678", NA, "00459637", 
+NA, "01218414", "00458522", "00463937", "01218322", NA, "00578657", 
+"01198831", "00575163", "01217644", "00562227", "01219130", "00212322", 
+"00566703", "00565047", "01188419", "01195656", "01193175", "01188821", 
+"00573487", "00568697", "00577647", "00566483", "01212593", "00615944", 
+"00211956", "00210299", "00211809", "01061227", "01078936", "01070667", 
+"01070812", "00570232", "00565341", "01070804", "01042782", "00655168", 
+"00209579", "00212225", "00208263", "00636476", "00639670", "00624788", 
+"01563595", NA, "01083992", "01078131"), GNIS_Name = c("Pomme de Terre Lake", 
+"Clearwater Lake", NA, "Lake Saint Louis", "Cuba Lake", "Indian Lake", 
+"Sunnen Lake", "Yawgoo Pond", "Lake Northwood", "Fourche Lake", 
+"Lake Wauwanoka", "Edwin A Pape Lake", NA, "Loggers Lake", "Slack Reservoir", 
+"Keech Pond", "Belleville Pond", "George Wyth Lake", "School House Pond", 
+NA, "North Twin Lake", NA, "Gorton Pond", "Little Wall Lake", 
+"Lake Ahquabi", "Flat River Reservoir", NA, "Lake Wood", "Lake Greeley", 
+"Sebasticook Lake", "Chapman Pond", "Big Reed Pond", "Coventry Reservoir", 
+"Lake Zoar", "Gardner Pond", "Denny Pond", "Starlight Lake", 
+"Lackawanna Lake", "Raystown Lake", "Stoughton Lake", "Pleasant Lake", 
+"Island Pond", "Upper Pond", "Fourth Debsconeag Lake", "Struble Lake", 
+"Hinckleys Pond", "West Hill Pond", "Roseland Lake", "Lake Waramaug", 
+"Michael J Kirwan Reservoir", "La Due Reservoir", "Atwood Lake", 
+"Leesville Lake", "Long Lake", "Duck Lake", "Kiser Lake", "Lake Loramie", 
+"Aspen Lake", "Pachaug Pond", "Wononpakook Lake", "Lake Kenosia", 
+"Saddle Lake", "Bass Lake", "Donnell Lake", "Crystal Lake", NA, 
+"Grand Lake", "Belmont Lake"), chla_07_mean = c(23.832, 8.016, 
+23.0933333333333, 31.4, 3.18, 8.752, 9.12, 3.744, 7.6, 1.494, 
+5.36, 27.132, 2.86133333333333, 2.704, 2.104, 4.592, 24.32, 70.272, 
+0.896, 66.24, 38.2, 8.92, 7.776, 26.64, 89.22, 2.25066666666667, 
+92.16, 1.04, 11.657, 8.224, 4.432, 1.749, 2.96, 22.72, 0.688, 
+1.168, 3.352, 25.92, 3.856, 11.392, 1.829, 0.816, 0.888, 1.083, 
+17.829, 10.672, 1.576, 26.424, 6.69866666666667, 3.256, 59.4, 
+14.384, 6.96, 16.16, 1.035, 34.848, 50.933, 3.384, 2.872, 4.176, 
+21.888, 4.032, 47.952, 3.288, 1.148, 23.2, 189.36, 6.848), lg_chla_mean = c(22.0438775510204, 
+12.0217142857143, 20.1304093567251, 10.0753623188406, 5.4040625, 
+17.3, 3.30652173913043, 9.45576954191304, 4.55, 2.51162790697674, 
+2.85238095238095, 33.0619047619048, 0.93334375, 2.95714285714286, 
+6.64975721230769, 3.09524584436, 10.6966358, 25.0108333333333, 
+1.60367864508696, 40.1947826086957, 41.9382608695652, 19.7391304347826, 
+12.4302447958182, 52.2263636363636, 38.1872727272727, 2.66233812428571, 
+74.0447058823529, 2.73333333333333, 8.38333333333333, 12.3, 6.2835760792, 
+3.45, 1.1773410715, 46.541575, 1.56666666666667, 1.76666666666667, 
+8.1, 9.13333333333333, 5.5, 8, 2.76666666666667, 1.9, 1.9, 1.05, 
+55, 9.4, 1.5, 20.45, 11.05, 6.7, 33.45, 32.4, 12.7, 8.3, 0.6, 
+74.9, 65.6, 4.31, 2, 15, 17, 4.73, 58.7, 2.93, 0.879, 55, 351.9, 
+9.2), tp_07_mean = c(29, 144, 30, 89, 6, 22, 18, 21, 16, 8, 10, 
+67, 6.66666666666667, 5, 14, 6, 35, 54, 3, 77, 53, 227, 12, 69, 
+72.5, 6, 572, 10, 44, 16, 9, 5, 7, 38, 1, 4, 11, 22, 7, 29, 1, 
+1, 4, 3, 60, 25, 4, 44, 13, 6, 54, 36, 14, 10, 4, 108, 819, 8, 
+20, 17, 30, 10, 62, 8, 1, 43, 395, 15), lg_tp_mean = c(37.7091836734694, 
+21.688, 52.2157894736842, 37.2521739130435, 17.921875, 33.7254901960784, 
+12.0217391304348, 21.7608695652174, 22, 9.13953488372093, 12.1428571428571, 
+71.0714285714286, 5.584375, 9.14285714285714, 16.1923076923077, 
+13.12, 22.68, 42.2354166666667, 7.97826086956522, 87.3147826086957, 
+76.6486956521739, 197.619565217391, 23.1818181818182, 113.457272727273, 
+68.2195454545455, 8.85238095238095, 251.794705882353, 7.25, 24.8333333333333, 
+21.2, 19.8, 6.6, 12.75, 64.75, 2.33333333333333, 6.33333333333333, 
+23.3333333333333, 35, 10, 29, 4.66666666666667, 5.5, 10.5, 3.5, 
+62, 27.5, 7, 38, 24, 15.05, 36.9, 35.25, 22.25, 12, 3, 134, 715.3, 
+16, 16, 28, 20, 65.89, 96, 13.88, 8.23, 48.1, 524.2, 29), tn_07_mean = c(535, 
+165, 623.666666666667, 788, 178, 464, 346, 295, 351, 316, 326, 
+949, 336, 223, 368, 300, 366, 1205, 110, 1704, 1453, 4191, 331, 
+2228, 1163, 288, 2082, 151, 479, 366, 376, 204, 369, 901, 129, 
+161, 191, 601, 1009, 507, 131, 168, 216, 138, 724, 353, 156, 
+820, 292.666666666667, 343, 2157, 446, 303, 279, 183, 1166, 1896, 
+449, 300, 315, 759, 603, 1175, 723, 197, 628, 3572, 336), lg_tn_mean = c(685.816326530612, 
+417.257142857143, 987.368421052632, 639.855072463768, 409.515625, 
+598.627450980392, 275.869565217391, 576.521739130435, 437.5, 
+252.325581395349, 368.571428571429, 995.952380952381, 438.3465625, 
+201.428571428571, 544.230769230769, 389.4, 601.2, 1021.3375, 
+327.391304347826, 2840.72173913043, 1855.97391304348, 7384.6, 
+613.863636363636, 1826.12727272727, 1171.29090909091, 401.904761904762, 
+2090.29411764706, 224, 366.666666666667, 445.2, 787, 229.5, 392.5, 
+887.25, 165, 259.333333333333, 496.666666666667, 526.666666666667, 
+1693.33333333333, 840, 198, 241.5, 299, 122, 1535, 430, 245, 
+895, 635, 424.5, 742, 456, 442, 462, 125, 1539, 1602, 390, 420, 
+670, 508, 474.27, 1780, 509.26, 217.2, 980, 4087, 382), lon_07_mean = c(-93.32597024, 
+-90.79086629, -94.49793062, -90.78180772, -78.29237084, -91.45201074, 
+-90.92375999, -71.57318015, -91.480991, -91.054054, -90.53646, 
+-93.59341677, -84.80370819, -91.261113, -71.55317818, -71.68494167, 
+-71.4790807, -92.4014, -71.66573009, -94.66049019, -94.63032824, 
+-91.58457902, -71.45889451, -93.63628619, -93.59040488, -71.61087837, 
+-93.92037248, -68.268509, -75.02535883, -69.2311707, -71.79479768, 
+-69.056968, -71.64332202, -73.28915784, -68.89108, -68.871133, 
+-75.33783928, -75.70704866, -78.11907346, -79.05296653, -70.52697713, 
+-68.843, -68.853062, -69.077222, -75.86456997, -70.08954132, 
+-73.04056323, -71.95133091, -73.36398551, -81.13692241, -81.22089462, 
+-81.23795266, -81.16283175, -68.23140034, -68.094876, -83.96549218, 
+-84.32400254, -90.41206384, -71.91051169, -73.45450471, -73.50316356, 
+-86.04986016, -94.078777, -85.89436967, -89.61298609, -81.31730025, 
+-84.49692799, -81.01548859), lg_lon_mean = c(-93.326916, -90.786942, 
+-94.506702, -90.780375, -78.292245, -91.45321, -90.924261, -71.572995, 
+-91.480838, -91.054541, -90.536164, -93.592462, -84.805378, -91.261301, 
+-71.553209, -71.691108, -71.479539, -92.39764, -71.665993, -94.659413, 
+-94.63003, -91.58439, -71.458616, -93.63682, -93.591452, -71.619423, 
+-93.919326, -68.268379, -75.025033, -69.237739, -71.794874, -69.057171, 
+-71.64261, -73.208481, -68.890654, -68.871444, -75.337547, -75.706799, 
+-78.112287, -79.052836, -70.525861, -68.842401, -68.853455, -69.077241, 
+-75.864508, -70.089673, -73.04036, -71.951475, -73.363061, -81.129757, 
+-81.212243, -81.242172, -81.167835, -68.236592, -68.097759, -83.965623, 
+-84.330802, -90.411781, -71.908774, -73.454595, -73.502913, -86.04984, 
+-94.079007, -85.89331, -89.613093, -81.317153, -84.498751, -81.01822
+), lat_07_mean = c(37.85925631, 37.14689417, 39.41441295, 38.79320182, 
+42.25218027, 38.08837452, 37.93823147, 41.51134268, 38.428911, 
+36.636707, 38.228213, 38.93960606, 45.41454518, 37.386994, 41.8621338, 
+41.89097393, 41.55977063, 42.535944, 41.39410498, 43.13964644, 
+42.48541393, 41.77555566, 41.70544844, 42.27012122, 41.29211104, 
+41.68686806, 41.46950026, 44.40788, 41.41393411, 44.84955975, 
+41.37985994, 46.353306, 41.6889871, 41.44985958, 46.962321, 46.944636, 
+41.90973411, 41.55549527, 40.35740927, 40.16155115, 44.04280484, 
+46.9518, 46.944789, 45.752816, 40.1114616, 41.71307603, 41.88000298, 
+41.95095517, 41.69699293, 41.13540548, 41.36496934, 40.55157389, 
+40.4600301, 47.17784258, 45.152049, 40.18853553, 40.38121547, 
+48.04237609, 41.56832304, 41.93751914, 41.38426053, 42.38300259, 
+43.8192, 41.90886578, 46.00218518, 41.06227132, 40.52821138, 
+40.04075657), lg_lat_mean = c(37.845661, 37.161005, 39.447931, 
+38.795219, 42.250585, 38.094471, 37.943088, 41.511129, 38.427454, 
+36.638942, 38.230839, 38.938953, 45.408891, 37.388431, 41.861555, 
+41.8822, 41.563199, 42.534811, 41.399542, 43.146974, 42.485208, 
+41.785417, 41.705333, 42.269235, 41.288804, 41.696441, 41.476729, 
+44.40771, 41.411829, 44.859269, 41.380221, 46.352973, 41.693361, 
+41.411956, 46.961168, 46.944201, 41.909176, 41.56722, 40.349062, 
+40.16161, 44.035092, 46.953053, 46.943734, 45.752439, 40.112066, 
+41.713008, 41.881601, 41.950378, 41.697026, 41.142929, 41.381463, 
+40.544302, 40.482544, 47.210012, 45.149366, 40.18835, 40.375537, 
+48.042459, 41.565849, 41.938536, 41.384331, 42.382416, 43.819175, 
+41.907309, 46.001794, 41.065088, 40.526132, 40.042461), lg_n = c(192L, 
+174L, 171L, 69L, 64L, 51L, 46L, 46L, 44L, 43L, 42L, 42L, 32L, 
+28L, 26L, 25L, 25L, 24L, 23L, 23L, 23L, 23L, 22L, 22L, 22L, 21L, 
+17L, 6L, 6L, 5L, 5L, 4L, 4L, 4L, 3L, 3L, 3L, 3L, 3L, 3L, 3L, 
+2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 2L, 1L, 1L, 1L, 1L, 
+1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L), n_07 = c(1L, 1L, 
+2L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 2L, 1L, 1L, 1L, 1L, 1L, 
+1L, 1L, 1L, 2L, 1L, 1L, 2L, 2L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 
+1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 2L, 1L, 
+1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 
+1L, 1L), lagoslakeid = c(6076L, 6299L, 6199L, 6185L, 6419L, 78634L, 
+10987L, 7970L, 36107L, 136303L, 5726L, 38285L, 4099L, 39362L, 
+8292L, 7593L, 7695L, 4709L, 8365L, 5329L, 4594L, 4819L, 8354L, 
+4448L, 4351L, 8333L, 4821L, 284L, 7120L, 7676L, 7788L, 8462L, 
+7832L, 7429L, 7502L, 7815L, 7414L, 6978L, 6756L, 7086L, 8042L, 
+7579L, 7977L, 7928L, 6635L, 5068L, 7329L, 7088L, 6733L, 2553L, 
+3192L, 543L, 2297L, 7585L, 8249L, 496L, 3002L, 918L, 7324L, 6761L, 
+7340L, 671L, 2282L, 1808L, 4722L, 1947L, 3452L, 3262L), nhdid = c("102216470", 
+"62054026", "107283787", "42881253", "112379569", "65006031", 
+"43890747", "136215443", "42568249", "150055085", "79320224", 
+"91380095", "155411095", "45166518", "127647317", "123913632", 
+"127675994", "155067488", "136212144", "120827396", "137044132", 
+"155098136", "127631575", "133402968", "133534596", "127685872", 
+"133529131", "151717640", "120023014", "152430604", "136210824", 
+"145051185", "127629074", "122975624", "142978848", "142978857", 
+"25861706", "66419055", "65851063", "123715348", "132665404", 
+"142978849", "142978856", "150612382", "120022942", "136666971", 
+"123632852", "122365552", "122986126", "125574086", "123056308", 
+"152017059", "152017536", "142978516", "150098086", "152840297", 
+"152839685", "114540013", "122359746", "122972812", "122986164", 
+"152274884", "32672504", "155637449", "69886510", "123062981", 
+"120021975", "73885636"), OBJECTID = c(166000L, 406211L, 169889L, 
+58263L, 136997L, 287734L, 339564L, 24001L, 295760L, 178288L, 
+153118L, 198102L, 39123L, 128629L, 44998L, 99012L, 92585L, 136963L, 
+45057L, 82766L, 171943L, 209144L, 8783L, 73516L, 44417L, 12206L, 
+148958L, 559L, 12897L, 28243L, 49720L, 21222L, 89234L, 18321L, 
+6516L, 1752L, 108883L, 68767L, 79059L, 67449L, 13890L, 10630L, 
+13390L, 12779L, 83442L, 43837L, 20840L, 15803L, 47182L, 51603L, 
+55800L, 104477L, 78350L, 42842L, 7849L, 20617L, 4735L, 26899L, 
+49330L, 40906L, 42794L, 66934L, 166532L, 14493L, 131779L, 116975L, 
+19769L, 55068L)), .Names = c("GNIS_NAME", "GNIS_ID.y", "GNIS_Name", 
+"chla_07_mean", "lg_chla_mean", "tp_07_mean", "lg_tp_mean", "tn_07_mean", 
+"lg_tn_mean", "lon_07_mean", "lg_lon_mean", "lat_07_mean", "lg_lat_mean", 
+"lg_n", "n_07", "lagoslakeid", "nhdid", "OBJECTID"), row.names = c(NA, 
+-68L), class = c("tbl_df", "tbl", "data.frame"))
+
+## plotting lakes used in the paper:
+
+map("usa")
+points(nla_7$lon_07_mean, nla_7$lat_07_mean, cex=0.5, col=grey(0.65), pch=3)
+points(nla_12$lon_12_mean, nla_12$lat_12_mean, cex=0.5, col=grey(0.65), pch=2)
+points(sharedLakes$lg_lon_mean[sharedLakes$lg_n>10], sharedLakes$lg_lat_mean[sharedLakes$lg_n>10], cex=0.75, pch=16)
+
+```
+
+We selected lakes from LAGOS with at least 10 observations for this analysis.  Comparing lake-specific models fit using hierarchical model to the common practice of either combining data from all lakes or fitting a model using lake means. The goal of this example is to illustrate the importance of accounting for data hierarchical structure. The 27 lake selected here have at least 27 observations. We fit the typical log-log linear model of chlorophyll a ($chla$) predicted by total nitrogen ($tn$), total phosphorous ($tp$), and their interaction. Using the TP:TN interaction was inspired by Qian (2016) who suggested that the interaction slope is indicative of a lake's trophic status: a negative (0, positive) interaction slope indicates that the lake is likely euthophic (mesotrophic, oligotrophic).
+
+When we have `tp` and `tn` observations from these lakes, we can no longer claim ignorance because TP and TN are nearly always positively correlated with chla. But when we model the relationship between $chla$ and $TP$ and $TN$ using a log-log linear model:
+$$
+\log(chla_{ij}) = \beta_{0j} + \beta_{1j}\log(TP)+\beta_{2j}\log(TP)+\beta_{3j}\log(TP)\log(TN)+\epsilon_{ij}
+$$
+we may claim ignorance on how regression coefficients vary among lakes. As a result, we can impose a common prior for these coefficients:
+$$
+\begin{pmatrix}\beta_{0j}\\ \beta_{1j} \\ \beta_{2j} \\ \beta_{3j} \end{pmatrix} \sim MVN \begin{bmatrix}\begin{pmatrix}\mu_0\\ \mu_1 \\ \mu_2 \\ \mu_3 \end{pmatrix}, \Sigma \end{bmatrix}
+$$
+Now we say that these lakes are exchangeable with respect to model coefficients. 
+
+The R package `lme4` provides efficient algorithms to estimate these parameters using restricted maximum likelihood method.  Although the algorithms are not efficient in estimating the variance parameters, the algorithms are fast and often provide good approximations. We can use `lme4` to explore different model forms to decide how to model the data the best and move the chosen model form to Stan for accurate quantification. 
+
+- Comparing different spatial aggregations
+```{R}
+## fitting hierarchical model for each lake
+log_tp_mu <- mean(log(lg_lakes$tp+0.1), na.rm=T)
+log_tn_mu <- mean(log(lg_lakes$tn+1), na.rm=T)
+
+lg_lakes_cen <- data.frame(log_chla=log(lg_lakes$chla), 
+                           log_tp_c=log(lg_lakes$tp+0.1) - log_tp_mu,
+                           log_tn_c=log(lg_lakes$tn+1) - log_tn_mu,
+                           id=lg_lakes$lagoslakeid)
+lg_mlm <- lmer(log_chla ~ log_tp_c + log_tn_c + log_tp_c:log_tn_c + 
+                 (1+log_tp_c + log_tn_c + log_tp_c:log_tn_c|id), 
+               data=lg_lakes_cen)
+
+## Fitting a single linear regression model using lake means
+## US EPA approach 
+lg_lakes_means <- data.frame(log_chla=tapply(log(lg_lakes$chla), lg_lakes$lagoslakeid, mean, na.rm=T), 
+                             log_tp=tapply(log(lg_lakes$tp+0.1), lg_lakes$lagoslakeid, mean, na.rm=T),
+                             log_tn=tapply(log(lg_lakes$tn+1), lg_lakes$lagoslakeid, mean, na.rm=T))
+xyplot(log_chla ~ log_tp, data=lg_lakes_means)
+
+lg_lakes_means_lm <- lm(log_chla ~ I(log_tp-log_tp_mu)+I(log_tn-log_tn_mu)+
+                          I(log_tp-log_tp_mu):I(log_tn-log_tn_mu), data=lg_lakes_means)
+lg_mean_lm_coef <- coef(lg_lakes_means_lm)
+
+## fitting using all observations (complete mixing)
+lg_lakes_cen <- data.frame(log_chla=log(lg_lakes$chla), 
+                           log_tp_c=log(lg_lakes$tp+0.1) - log_tp_mu,
+                           log_tn_c=log(lg_lakes$tn+1) - log_tn_mu,
+                           id=lg_lakes$lagoslakeid)
+lg_lakes_lm <- lm(log_chla ~ log_tp_c + log_tn_c + log_tp_c:log_tn_c, 
+               data=lg_lakes_cen)
+lg_lm_coef <- coef(lg_lakes_lm)
+
+```
+Now we compare the estimated coefficients:
+```{R}
+line.plots <- function(est, se, yaxis=NULL, hline=0, HL=T, 
+                       oo=NULL, Outer=F, xloc=1, yaxisLab=NULL, ...){
+    n <- length(est)
+    if (!is.null(oo)) {
+        est<-est[oo]
+        se <-se[oo]
+    }
+    if(n != length(se))stop("lengths not match")
+    plot(1:n, 1:n, xlim=range(c(est+2*se, est-2*se)),
+         ylim=c(0.75, n+0.25),
+         type="n", axes=F, ...)
+    axis(xloc)
+    axis(side=c(1,3)[c(1,3)!=xloc], labels = F)
+    if (!is.null(yaxis))
+      axis(yaxis, at=1:n, labels=yaxisLab, las=1, outer=Outer)
+    segments(y0=1:n, y1=1:n, x0=est-2*se, x1=est+2*se)
+    segments(y0=1:n, y1=1:n, x0=est-1*se, x1=est+1*se, lwd=2.5)
+    points(est, 1:n)
+    if (HL) abline(v=hline, col="gray")
+    invisible()
+}
+
+## all lakes, by lake
+est <- t(fixef(lg_mlm) + t(as.matrix(ranef(lg_mlm)[["id"]])))
+se <- sqrt(t(se.fixef(lg_mlm)^2+t(as.matrix(se.ranef(lg_mlm)[["id"]]))^2))
+oo <- order(est[,1])
+
+par(mfrow=c(1,4), mgp=c(1.25,0.125,0), oma=c(0, 3, 0, 3), 
+    tck=0.01, las=1, mar=c(3, 0, 3, 0))
+line.plots(est[oo,1], se[oo,1], yaxis=2, hline=fixef(lg_mlm)[1], yaxisLab=1:27, xlab="$\\beta_0$")
+abline(v=lg_mean_lm_coef[1], col="red")
+abline(v=lg_lm_coef[1], col="blue")
+box(col=grey(0.3))
+line.plots(est[oo,2], se[oo,2], yaxisLab=1:27,
+           hline=fixef(lg_mlm)[2], xloc=3, xlab="$\\beta_1$")
+abline(v=lg_mean_lm_coef[2], col="red")
+abline(v=lg_lm_coef[2], col="blue")
+box(col=grey(0.3))
+line.plots(est[oo,3], se[oo,3], yaxisLab=1:27,
+           hline=fixef(lg_mlm)[3], xlab="$\\beta_2$")
+abline(v=lg_mean_lm_coef[3], col="red")
+abline(v=lg_lm_coef[3], col="blue")
+box(col=grey(0.3))
+line.plots(est[oo,4], se[oo,4], yaxisLab=1:27, xlab="$\\beta_3$",
+           yaxis=4, xloc = 3)
+abline(v=lg_mean_lm_coef[4], col="red")
+abline(v=lg_lm_coef[4], col="blue")
+box(col=grey(0.3))
+```
+- Comparing teporal aggregations
+Examining the temporal scale aggregation of the three lake with long time series
+
+```{r}
+lg_lakes_long <- sharedLakes$lagoslakeid[sharedLakes$lg_n>100]
+lg_lakes_long <- lg_nutr[is.element(lg_nutr$lagoslakeid, lg_lakes_long), ]
+lg_lakes_long$date <- as.Date(lg_lakes_long$sampledate, format="%m/%d/%Y")
+
+
+lake1 <- lg_lakes_long[lg_lakes_long$lagoslakeid==unique(lg_lakes_long$lagoslakeid)[1],]
+lake1$log_chla <- log(lake1$chla)
+lake1$log_tp_c <- log(lake1$tp+0.1) - log_tp_mu
+lake1$log_tn_c <- log(lake1$tn+1) - log_tn_mu
+
+lake2 <- lg_lakes_long[lg_lakes_long$lagoslakeid==unique(lg_lakes_long$lagoslakeid)[2],]
+lake2$log_chla <- log(lake2$chla)
+lake2$log_tp_c <- log(lake2$tp+0.1) - log_tp_mu
+lake2$log_tn_c <- log(lake2$tn+1) - log_tn_mu
+
+lake3 <- lg_lakes_long[lg_lakes_long$lagoslakeid==unique(lg_lakes_long$lagoslakeid)[3],]
+lake3$log_chla <- log(lake3$chla)
+lake3$log_tp_c <- log(lake3$tp+0.1) - log_tp_mu
+lake3$log_tn_c <- log(lake3$tn+1) - log_tn_mu
+
+lake1_mlm <- lmer(log_chla ~ log_tp_c + log_tn_c + log_tp_c:log_tn_c +(1+log_tp_c+log_tn_c+log_tp_c:log_tn_c|sampleyear), data=lake1)
+
+lake2_mlm <- lmer(log_chla ~ log_tp_c + log_tn_c + log_tp_c:log_tn_c +(1+log_tp_c+log_tn_c+log_tp_c:log_tn_c|sampleyear), data=lake2)
+
+lake3_mlm <- lmer(log_chla ~ log_tp_c + log_tn_c + log_tp_c:log_tn_c +(1+log_tp_c+log_tn_c+log_tp_c:log_tn_c|sampleyear), data=lake3)
+
+```
+
+Graphical comparisons
+```{R}
+## lake 1 by year
+est <- t(fixef(lake1_mlm) + t(as.matrix(ranef(lake1_mlm)[["sampleyear"]])))
+se <- sqrt(t(se.fixef(lake1_mlm)^2+t(as.matrix(se.ranef(lake1_mlm)[["sampleyear"]]))^2))
+oo <- order(est[,1])
+ylb <- row.names(ranef(lake1_mlm)[["sampleyear"]])
+
+par(mfrow=c(1,4), mgp=c(1.25,0.125,0), oma=c(0, 3, 0, 3), 
+    tck=0.01, las=1, mar=c(3, 0, 3, 0))
+line.plots(est[oo,1], se[oo,1], yaxisLab=ylb[oo],
+           yaxis=2, hline=fixef(lake1_mlm)[1], xlab="$\\beta_0$")
+box(col=grey(0.3))
+line.plots(est[oo,2], se[oo,2], yaxisLab=ylb[oo], xlab="$\\beta_1$",
+           hline=fixef(lake1_mlm)[2], xloc=3)
+box(col=grey(0.3))
+line.plots(est[oo,3], se[oo,3], yaxisLab=ylb[oo], xlab="$\\beta_2$",
+           hline=fixef(lake1_mlm)[3])
+box(col=grey(0.3))
+line.plots(est[oo,4], se[oo,4], yaxisLab=ylb[oo], xlab="$\\beta_3$",
+           yaxis=4, xloc=3)
+box(col=grey(0.3))
+
+## lake 2 by year
+est <- t(fixef(lake2_mlm) + t(as.matrix(ranef(lake2_mlm)[["sampleyear"]])))
+se <- sqrt(t(se.fixef(lake2_mlm)^2+t(as.matrix(se.ranef(lake2_mlm)[["sampleyear"]]))^2))
+oo <- order(est[,1])
+ylb <- row.names(ranef(lake2_mlm)[["sampleyear"]])
+
+par(mfrow=c(1,4), mgp=c(1.25,0.125,0), oma=c(0, 3, 0, 3), 
+    tck=0.01, las=1, mar=c(3, 0, 3, 0))
+line.plots(est[oo,1], se[oo,1], yaxisLab =ylb[oo], xlab="$\\beta_0$",
+           yaxis=2, hline=fixef(lake2_mlm)[1])
+box(col=grey(0.3))
+line.plots(est[oo,2], se[oo,2], yaxisLab=ylb[oo], xlab="$\\beta_1$",
+           hline=fixef(lake2_mlm)[2], xloc=3)
+box(col=grey(0.3))
+line.plots(est[oo,3], se[oo,3], yaxisLab =ylb[oo], xlab="$\\beta_2$",
+           hline=fixef(lake2_mlm)[3])
+box(col=grey(0.3))
+line.plots(est[oo,4], se[oo,4], yaxisLab =ylb[oo], xlab="$\\beta_3$",
+           yaxis=4, xloc = 3)
+box(col=grey(0.3))
+
+## lake 3 by year
+est <- t(fixef(lake3_mlm) + t(as.matrix(ranef(lake3_mlm)[["sampleyear"]])))
+se <- sqrt(t(se.fixef(lake3_mlm)^2+t(as.matrix(se.ranef(lake3_mlm)[["sampleyear"]]))^2))
+oo <- order(est[,1])
+ylb <- row.names(ranef(lake3_mlm)[["sampleyear"]])
+
+par(mfrow=c(1,4), mgp=c(1.25,0.125,0), oma=c(0, 3, 0, 3), 
+    tck=0.01, las=1, mar=c(3, 0, 3, 0))
+line.plots(est[oo,1], se[oo,1], yaxisLab=ylb[oo], xlab="$\\beta_0$",
+           yaxis=2, hline=fixef(lake3_mlm)[1])
+box(col=grey(0.3))
+line.plots(est[oo,2], se[oo,2], yaxisLab =  ylb[oo], xlab="$\\beta_1$",
+           hline=fixef(lake3_mlm)[2], xloc = 3)
+box(col=grey(0.3))
+line.plots(est[oo,3], se[oo,3], yaxisLab =  ylb[oo], xlab="$\\beta_2$",
+           hline=fixef(lake3_mlm)[3])
+box(col=grey(0.3))
+line.plots(est[oo,4], se[oo,4], yaxisLab =  ylb[oo], xlab="$\\beta_3$",
+           yaxis=4, xloc = 3)
+box(col=grey(0.3))
+```
+See Section 6.4.3 of Qian et al (2022) for details on programming multilevel models in Stan.
+
+### Why Simpson's paradox
+
+What is the cause of Simpson's paradox? 
+
+There are numerous discussions on the causes of and the means to
+avoiding Simpson's paradox.  We discussed two main lines of arguments.
+Lindley and Novick (1981) emphasized the concept of exchangeable
+units, suggesting that the fallacy lies in applying results of a model
+to subjects that are not exchangeable with the data used for model
+development.  Pearl et al (2016) stressed the importance of
+properly outlining the causal structure of the problem, particularly,
+identifying hidden causes.  We use the paper by Cheng and Basu (2017)
+to illustrate the importance of these two lines of arguments.
+
+Cheng and Basu (2017) compiled a data set of 600 lentic water bodies
+(lakes, reservoirs, and wetlands) around the globe from several dozen
+studies, including the North American Treatment Database
+(NATD) v2.0 for constructed wetlands.  In NATD, most wetlands
+were represented by a small number of records which were often the
+temporal (e.g., annual) and spatial (e.g., segments) averages of each
+of the key relevant factors examined in their study (i.e., flow,
+hydraulic residence time, and nutrient loading). Using the data, they
+calculated, for each water, the nutrient retention as a ratio of the
+amount nutrient retained in the water over the input loading:
+$$ 
+R=\frac{M_{in}-M_{out}}{M_{in}}
+$$  
+where $M_{in}$ is the input mass loading and $M_{out}$ is the output
+loading.  In addition, they estimated two parameters that are part of
+water quality models commonly used to simulate the fate and transport
+of contaminants.  Specifically for model phosphorus retention in
+wetlands, they are the effective removal rate constant $k$ and the
+hydraulic residence time $\tau$.  In a typical simplified water
+quality model based on the first-order reaction mechanism, these two
+parameters are used to estimate nutrient retention:
+- Assuming the water is well mixed, use the continuously stirred
+  tank reactor (CSTR) model
+  $$
+  k = \frac{R}{1-R}\left (\frac{1}{\tau}\right ).
+  $$
+- Assuming the water flows from inlet to outlet without
+  longitudinal diffusion and dispersion, use the plug-flow reactor
+  (PFR) model
+  $$
+  k = \log(1-R)\left (\frac{1}{\tau}\right ).
+  $$
+Once $k$ and $\tau$ were estimated separately for each wetland, lake,
+and reservoir, Cheng and Basu (2017) fit a regression model using
+$\tau$ as the predictor variable and $k$ as the response variable:
+$$
+\log(k_j) = \beta_0+\beta_1\log(\tau_j)+\epsilon_j
+$$
+where $j$ represents individual waters.  They showed that the
+estimated slope $\beta_1$ is negative, suggesting that the shorter the
+hydraulic residence time ($\tau$) is, the larger the phosphorus
+effective removal rate constant ($k$) is.  Because a wetland's $\tau$
+is positively correlated with its surface area, Cheng and Basu (2017)
+concluded that small wetlands are more effective in removing
+phosphorus over the landscape than large wetlands on a per unit area
+basis ($k$).
+
+```{R}
+CB_data <- read.csv(paste(dataDIR, "ChengBasu.csv", sep="/"))
+CB_data$k_TP_CSTR <- as.numeric(as.character(CB_data$k_TP_CSTR))
+CB_data$k_TP_PFR <- as.numeric(as.character(CB_data$k_TP_PFR))
+
+CB_data$Wetland <- 1  
+CB_data$Wetland[substring(CB_data$Type, 2, 2)!="W"] <- 0
+```
+
+We illustrate the issues with this analysis in two steps.
+
+First, we examine the meaning of model coefficients using the
+exchangeable concept.  The model in the previous equation is
+inevitably a model for individual waters.  As a result, fitting the
+model using combined data from lakes, reservoirs, and wetlands combines nonexchangeable units together and is
+susceptible to Simpson's paradox.  We fit the same model using combined data from lakes, reservoirs, and
+wetlands, and compare the resulting model coefficients to the
+coefficients from the same model fit to data from lakes, reservoirs,
+and wetlands separately.  The slope estimated using the combined data
+is much lower than the slopes estimated using data from the three
+types of water separately:
+
+```{R}
+## all data
+lm1_all_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
+              subset=k_TP_CSTR>0)
+
+lm1_all_PFR <- lm(log(k_TP_PFR) ~ log(HRT_tau), data=CB_data,
+              subset=k_TP_PFR>0)
+
+lm1_lake_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_CSTR>0 & Type=="Lake")
+lm1_lake_PFR <- lm(log(k_TP_PFR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_PFR>0 & Type=="Lake")
+
+lm1_res_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_CSTR>0 & Type=="Reservoir")
+lm1_res_PFR <- lm(log(k_TP_PFR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_PFR>0 & Type=="Reservoir")
+
+lm1_wet_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_CSTR>0 & Wetland==1)
+lm1_wet_PFR <- lm(log(k_TP_PFR) ~ log(HRT_tau), data=CB_data,
+                     subset=k_TP_PFR>0 & Wetland==1)
+
+## Figure 1 -- aggregated slopes
+slp_cstr <- rbind(
+    summary(lm1_all_CSTR)$coef[2,1:2],
+    summary(lm1_lake_CSTR)$coef[2,1:2],
+    summary(lm1_res_CSTR)$coef[2,1:2],
+    summary(lm1_wet_CSTR)$coef[2,1:2])
+row.names(slp_cstr)  <- c("All", "Lakes", "Reservoirs","Wetlands")
+
+slp_pfr <- rbind(
+    summary(lm1_all_PFR)$coef[2,1:2],
+    summary(lm1_lake_PFR)$coef[2,1:2],
+    summary(lm1_res_PFR)$coef[2,1:2],
+    summary(lm1_wet_PFR)$coef[2,1:2])
+row.names(slp_pfr)  <- c("All", "Lakes", "Reservoirs","Wetlands")
+
+par(mar=c(5,6,4, 2), mgp=c(2.25,1,0), tck=0.01, cex.main=1.3, cex.lab=1.1)
+line.plots(slp_cstr[,1], slp_cstr[,2], yaxis=2, ylab="", xlab="slopes",
+           yaxisLab =  rownames(slp_cstr))
+
+par(mar=c(5,6,4, 2), mgp=c(2.25,1,0), tck=0.01, cex.main=1.3, cex.lab=1.1)
+line.plots(slp_pfr[,1],slp_pfr[,2], yaxis=2, xlab="slopes", ylab="",
+           yaxisLab =  rownames(slp_pfr))
+```
+
+We can further fit the model to data from individual wetlands.  Using
+six wetlands in the database (with more than 10 observations), we
+estimate the wetland-specific slopes using a hierarchical model
+assuming the wetland-specific regression coefficients are
+exchangeable.  The six wetlands range in mean size (by volume) from
+5.24 to 47,585.27 m$^3$.  Using the concept of exchangeable units, we
+recognize that observations from the wetland with an average volume of
+5.24 m$^3$ cannot be exchangeable with observations from the wetland
+with an average volume of 47,585.27 m$^3$.  Consequently, we cannot
+directly combine data from these wetlands.  However, by assuming
+individual wetlands are exchangeable with respect to the regression
+model coefficients, we can partially pool data from multiple wetlands
+using a hierarchical model.  The slopes for the smallest and the
+largest wetlands are not different from 0 (larger than the slope
+estimated using the combined wetland data), while the slopes of the
+four intermediate sized wetlands are either highly uncertain (wetland
+514) or well below the slope estimated using the combined wetland data.  
+```{R}
+CB_wetland <- CB_data[CB_data$Wetland==1,]
+CB_wetland$sites <- as.numeric(CB_wetland$Year)
+## we determined that Year was mislabeled
+
+CB_NADB <- CB_wetland[CB_wetland$sites<1000,] ## small wetlands
+CB_NADB2 <- CB_NADB[CB_NADB$sites %in%
+              names(table(CB_NADB$sites)[table(CB_NADB$sites)>10]),
+                c("sites", "HRT_tau", "k_TP_PFR","k_TP_CSTR")]
+## more than 10 observations
+CB_NADB2 <- CB_NADB2[!is.na(CB_NADB2$k_TP_CSTR)&CB_NADB2$k_TP_CSTR>0,]
+table(CB_NADB2$sites)
+
+lmer_nadb_PFR <- lmer(log(k_TP_PFR) ~ log(HRT_tau) + (1+log(HRT_tau)|sites), data=CB_NADB2)
+
+lmer_nadb_CSTR <- lmer(log(k_TP_CSTR) ~ log(HRT_tau) + (1+log(HRT_tau)|sites), data=CB_NADB2)
+
+lmer_cstr_slp <- fixef(lmer_nadb_CSTR)[2] + ranef(lmer_nadb_CSTR)$sites[,2]
+lmer_cstr_slp_se <- se.ranef(lmer_nadb_CSTR)$sites[,2]
+lmer_slp_cstr <- data.frame(Estimate=c(fixef(lmer_nadb_CSTR)[2], 
+                                       lmer_cstr_slp),
+                            se.estimate=c(se.fixef(lmer_nadb_CSTR)[2],
+                                          lmer_cstr_slp_se))
+rownames(lmer_slp_cstr)[1] <- "Mean slope"
+
+lmer_pfr_slp <- fixef(lmer_nadb_PFR)[2] + ranef(lmer_nadb_PFR)$sites[,2]
+lmer_pfr_slp_se <- se.ranef(lmer_nadb_PFR)$sites[,2]
+lmer_slp_pfr <- data.frame(Estimate=c(fixef(lmer_nadb_PFR)[2],
+                                      lmer_pfr_slp),
+                            se.estimate=c(se.fixef(lmer_nadb_PFR)[2],
+                                          lmer_pfr_slp_se))
+rownames(lmer_slp_pfr)[1] <- "Mean slope"
+
+lmer_slp_pfr_plot <- rbind(lmer_slp_pfr, slp_pfr[4,]) 
+rownames(lmer_slp_pfr_plot)[8] <- "Wetlands"
+
+par(mar=c(5,6,4, 2), mgp=c(2.25,1,0), tck=0.01, cex.main=1.3, cex.lab=1.1)
+line.plots(lmer_slp_pfr_plot[,1],lmer_slp_pfr_plot[,2], yaxis=2, ylab="", xlab="slopes",
+           yaxisLab=rownames(lmer_slp_pfr_plot))
+
+par(mar=c(5,6,4, 2), mgp=c(2.25,1,0), tck=0.01, cex.main=1.3, cex.lab=1.1)
+line.plots(lmer_slp_cstr[,1],lmer_slp_cstr[,2], yaxis=2, ylab="", xlab="slopes",
+           yaxisLab=rownames(lmer_slp_cstr))
+```
+
+By now, we recognize that the variation
+in estimated slopes is a manifestation of Simpson's paradox.  The
+average model coefficients for all wetlands (labeled ``Mean slope'')
+are parameterized by the hyper-distribution model (i.e.,
+$\beta_j \sim N(\mu_\beta, \sigma_\beta^2)$).  The hyper-distribution
+mean ($\mu_\beta$) is most likely different from the estimated slope
+using combined wetland data.  The hyper-distribution mean has a clear
+physical meaning (the mean of the wetland-specific coefficients),
+whereas the slope estimated using combined data does not.
+
+
+-- spurious correlation
+Second, we can explain the differences in estimated slopes at
+different levels of aggregation using causal inference, as in
+Tang et al (2019).  In this case, we don't have additional
+variables for such analysis.  However, we can examine the linear regression model from a causal analysis angle.  The two
+parameters in question ($k$ and $\tau$) represent two different
+aspects of a wetland and they are most likely independent of each
+other (Carleton and Montas, 2007; Hejzlar et al, 2007; Vollenweider 1975). In this case, the link between the two parameters is established by
+the percent removal ($R$ in the CSTR or PFR models).  The parameter
+$k$ reflects the intrinsic characteristics of a wetland, while $\tau$
+is a parameter determined by external input of water relative to the
+size of the wetland.  The percent removal is a function of both $k$
+and $\tau$ (approximating the amount of time the nutrient mass stays
+in the system).  In other words, the causal diagram for wetland
+phosphorus removal should be represented as
+$k \rightarrow\ R \gets\ \tau$, which means that $k$ and $\tau$
+together determine $R$, but $k$ and $\tau$ are independent of each
+other.  A spurious correlation between $k$ and $\tau$ arises when $R$
+is set to vary within a narrow range.  In computer science literature,
+$k$ and $\tau$ are known to be direction-separated (d-separated) by
+$R$.  If two variables are d-separated, the apparent correlation
+between them is most likely spurious. We can use
+a simulation to demonstrate the effect of this d-separation.  We
+randomly generate values of $k$ and $\tau$ to calculate $R$ using the
+CSTR model plus random noise
+($R_i=k_i\tau_i/(1+k_i\tau_i)+\epsilon_i$).  In this case, the
+parameters $k_i$ and $\tau_i$ were independently drawn from log-normal
+distributions with log means ($\mu_k = -2.726$ and $\mu_\tau = 1.914$)
+and log standard deviations ($\sigma_k = 1.371$ and
+$\sigma_\tau = 1.269$) calculated from the log values for $k$ and
+$\tau$ for TP from the data used by Cheng and Basu (2017).  We then
+use a scatter plot of the randomly drawn $k$ and $\tau$ to show the
+spurious correlation by highlighting the data points with $k$ and
+$\tau$ values resulted in $R$ values between 32\% and 65\%.  Cheng and Basu (2017) indicated that
+wetlands with a percent removal ($R$) between 32\% and 65\% are of
+``no significant differences between systems and across
+constituents.''  The (spurious) negative correlation between $k$ and
+$\tau$ shown by the highlighted data points in the following Figure is remarkably similar to the pattern reported in Cheng and Basu (2017) in their data analysis, which suggests that the
+conclusion that small wetlands are more effective in phosphorus
+retention on a per unit area basis is a result of the spurious
+correlation induced by the d-separated relationship between $k$ and
+$\tau$.
+
+```{R}
+mu_k <- mean(log(CB_data$k_TP_CSTR[CB_data$Wetland==1 & CB_data$k_TP_CSTR>0]),
+             na.rm=TRUE)
+s_k <- sd(log(CB_data$k_TP_CSTR[CB_data$Wetland==1 & CB_data$k_TP_CSTR>0]),
+          na.rm=TRUE)
+
+mu_tau <- mean(log(CB_data$HRT_tau[CB_data$Wetland==1 & CB_data$k_TP_CSTR>0]),
+               na.rm=TRUE)
+s_tau <- sd(log(CB_data$HRT_tau[CB_data$Wetland==1 & CB_data$k_TP_CSTR>0]),
+            na.rm=TRUE)
+
+ln_K_TP <- exp(rnorm(1000,mu_k,s_k)) 
+ln_T_TP <- exp(rnorm(1000,mu_tau,s_tau))
+R1 <- (ln_K_TP * ln_T_TP)/(1+(ln_K_TP * ln_T_TP)) 
+
+par(mar=c(3,3,1,1),mgp=c(1.25,0.125,0),tck=0.01)
+plot(ln_T_TP,ln_K_TP, log="xy",
+     ylab="$k$", 
+     xlab="$\\tau$",
+     col=gray(0.5), axes=F)
+axis(1)
+axis(2, at=c(0.01,0.1,1,10), labels=c("0.01","0.1","1","10"))
+box()
+points(ln_T_TP[R1>0.32 & R1<0.65],
+       ln_K_TP[R1>0.32 & R1<0.65], pch=16) 
+
+```
