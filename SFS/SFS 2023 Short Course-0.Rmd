@@ -35,4 +35,15 @@ install.packages("rstan",
 You should create an empty folder on your laptop for this short course and download all `.Rmd` and `.RData` files from the [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder.  Data files used in the class will be accessed via internet.  If you don't have internet access on site, you need to download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **ahead of time**.  I will bring a copy of all necessary files with me just in case. 
 
 ## Your Data Examples
-To make the workshop more useful, I divide the day into four sessions. We begin with an introductory session using a simple problem that really don't require Bayesian statistics, definitely not the computing power of Stan. After the morning tea-break, we discuss the benefit of Bayesian, especially with Stan, in helping model evaluation, followed by two examples where the response variable probability distribution is complex.  In the afternoon, I prepared three examples to discuss my favorite topic, Bayesian hierarchical models.  I want to set the last couple of hours of the day to discuss any data examples from participants. If you want to share the example with me ahead of time (before May 31, US time), I will try to include in the last session.  
+To enhance the workshop's usefulness, I have structured the day into four sessions. Here's a breakdown of each session:
+
+- Introductory Session: We will start with an introductory session that focuses on a simple problem that doesn't necessarily require Bayesian statistics or the computational power of Stan. This session serves as a foundation for understanding key concepts.
+
+- Bayesian Benefits and Model Evaluation: After the morning tea-break, we will delve into the benefits of Bayesian analysis, particularly emphasizing the advantages of using Stan for model evaluation. We will explore two examples where the probability distribution of the response variable is complex, showcasing the power of Bayesian approaches.
+
+- Bayesian Hierarchical Models: In the afternoon, I have prepared three examples centered around my favorite topic: Bayesian hierarchical models. These examples will provide an in-depth understanding of how hierarchical models can be effectively utilized in Bayesian analyses.
+
+- Participant Data Examples: During the last couple of hours of the day, we will open the floor for discussion and analysis of data examples brought by participants. If you have an example you'd like to share, please send it (\url{song.qian@utoledo.edu}) to me ahead of time (before May 31, US time). I will do my best to include it in the final session and provide insights based on the shared data.
+
+By structuring the day in this manner, we aim to cover various aspects of Bayesian analysis, progressively building knowledge and offering opportunities for practical application.
+
