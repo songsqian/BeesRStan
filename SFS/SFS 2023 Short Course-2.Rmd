@@ -474,7 +474,7 @@ names(delta2A) <- c("H-I","H-O","I-O")
 Now we make some comparisons of the three alternative models
 ```{R}
 ## 1. Estimated core means
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
 mlplot(tempR, xlab="Original model", top.axis=F)
 mlplot(core1.musR, xlab="Alternative model 1",
        main="log Richness", axes=F)
@@ -482,7 +482,7 @@ axis(1)
 mlplot(core2.musR, xlab="Alternative model 2", axes=F)
 axis(1)
 
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
 mlplot(tempA, xlab="Original model", top.axis=F)
 mlplot(core1.musA, xlab="Alternative model 1",
        main="log Abundance", axes=F)
@@ -509,7 +509,7 @@ names(zone2R.thetas) <- c("Inshore", "Hypoxic","Offshore")
 zone2A.thetas <- c(zone21.Amu, zone22.Amu, zone23.Amu)
 names(zone2A.thetas) <- c("Inshore", "Hypoxic","Offshore")
 
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
 mlplot(zone0R.thetas, xlab="Original model", top.axis=F, xlim=c(2,3.5))
 abline(v=0)
 mlplot(zone1R.thetas, xlab="Alternative model 1", main="log Richness",
@@ -520,7 +520,7 @@ mlplot(zone1R.thetas, xlab="Alternative model 2", axes=F, xlim=c(2,3.5))
 axis(1)
 abline(v=0)
 
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
 mlplot(zone0A.thetas, xlab="Original model", top.axis=F, xlim=c(3.6,6))
 mlplot(zone1A.thetas, xlab="Alternative model 1", main="log Abundance",
        axes=F, xlim=c(3.6,6))
@@ -529,19 +529,19 @@ mlplot(zone1A.thetas, xlab="Alternative model 2", axes=F, xlim=c(3.6,6))
 axis(1)
 
 ## between zone differences
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
-mlplot(delta0A, xlab="Original model 1", top.axis=F, xlim=c(-2,1.5))
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck= -0.01)
+mlplot(delta0A, xlab="Original model 1", top.axis=F, xlim=c(-2.5,1.5))
 abline(v=0)
 mlplot(delta1A, xlab="Alternative model 1",
        main="log Abundance", axes=F,
-       xlim=c(-2,1.5))
+       xlim=c(-2.5,1.5))
 axis(1)
 abline(v=0)
-mlplot(delta2A, xlab="Alternative model 2", axes=F, xlim=c(-2,1.5))
+mlplot(delta2A, xlab="Alternative model 2", axes=F, xlim=c(-2.5,1.5))
 axis(1)
 abline(v=0)
 
-par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
 mlplot(delta0R, xlab="Original model", top.axis=F, xlim=c(-1.5,0.5))
 abline(v=0)
 mlplot(delta1R, xlab="Alternative model 1",
@@ -672,7 +672,7 @@ NB_coef <- rvsims(as.matrix(as.data.frame(NB_stanout)))
 means <- c(Pois_coef[1], NB_coef[1])
 names(means) <- c("$\\lambda_{pois}$", "$\\mu_{nb}$")
 
-par(mgp=c(1.25,0.125,0), tck=0.01)
+par(mgp=c(1.25,0.25,0), tck=-0.01)
 mlplot(means, xlab="Estimated mean by-catch per tow")
 
 ```
@@ -711,7 +711,7 @@ hist(summary(tmp==0)$mean)
 hist(summary(tmp)$mean)
 hist(summary(tmp)$sd)
 
-par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
+par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=-0.01)
 hist(n0_pois, xlim=range(c(n0_pois, n0_NB, zip0/n)),
      xlab="fraction of zeros", ylab="Poisson", main="",
      border="white", density=-1, col="gray", yaxt="n")
@@ -728,7 +728,7 @@ abline(v=mean(c(rep(0,zip0),zippos)))
 hist(sig_pois,
      xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
      xlab="standard deviation", ylab="", main="",yaxt="n",
-     border="white", density=-1)
+     border="white", density=-1, col=1)
 abline(v=sd(c(rep(0,zip0),zippos)))
 
 hist(n0_NB, xlim=range(c(n0_pois, n0_NB,zip0/n)),yaxt="n",
