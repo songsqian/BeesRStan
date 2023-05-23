@@ -3,13 +3,15 @@ title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecol
 author: "Song S. Qian"
 date: "6/3/2023"
 output: pdf_document
+urlcolor: blue
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-source("FrontMatter.R")
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+source(paste(rootDIR, "FrontMatter.R", sep="/"))
 
-packages(rstan)
+require(rstan)
 packages(rv)
 packages(car)
 rstan_options(auto_write = TRUE)
@@ -23,52 +25,52 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 ```
 ## Introduction
 
-- Statistical inference mode -- hypothetical deduction implemented through three basic "problems" (Fisher 1921)
-  
-  1. Problem of formulation -- what is the distribution of the response variable
-  2. Problem of estimation -- how to estimate parameters of the model (from problem 1)
-  3. Problem of distribution -- how to evaluate the model once we have the data
+Statistical Inference Mode: This mode, proposed by Fisher in 1921, involves three fundamental "problems" in statistical inference:
 
-- A mathematical summary of statistical inference
-  
-  - The probability distribution density function of the response variable $y$: $\pi(y, \theta)$
-  - Observing data $y_1,y_2\cdots,y_n$, we want to know the joint distribution of $\pi(y_1,y_2,\cdots,y_n, \theta)$. True for both classical and Bayesian inference.
-  - Classical statistics -- $\pi(y_1,\cdots,y_n, \theta) = \pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)$ 
-  - The likelihood function: $L(\theta; y)=\pi(y_1,\cdots,y_n\mid \theta)$ and MLE
-  - Sampling distribution -- uncertainty
-  - Bayesian statistics --  
-    - $\pi(y_1,\cdots,y_n, \theta) = \pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)=\pi(\theta\mid y_1,\cdots,y_n)\pi(y_1,\cdots,y_n)$
-    - Posterior distribution $\pi(\theta\mid y_1,\cdots,y_n)=\frac{\pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)}{\pi(y_1,\cdots,y_n)}\propto \pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)$ 
-    - Combining estimation and distribution 
-- Bayesian inference is a generalization of MLE-based classical inference: MLE is the mode of posterior distribution with uniform prior
+1. Problem of Formulation: This problem pertains to determining the distribution of the response variable.
+
+1. Problem of Estimation: Here, the focus is on estimating the parameters of the model derived from the problem of formulation once data are obtained.
+
+1. Problem of Distribution: This problem involves evaluating the model's fit and performance.
+
+A Mathematical Summary of Statistical Inference:
+
+- Probability Distribution Density Function: The density function of the response variable, denoted as $\pi(y, \theta)$.
+
+- Joint Distribution: Given observed data $y_1, y_2, \ldots, y_n$, the aim is to determine the joint distribution $\pi(y_1, y_2, \ldots, y_n, \theta)$. This holds true for both classical and Bayesian inference.
+
+- Classical Statistics: In classical statistics, the joint distribution is expressed as $\pi(y_1, \ldots, y_n, \theta) = \pi(y_1, \ldots, y_n \mid \theta) \pi(\theta)$. The likelihood function, denoted as $L(\theta; y)$, corresponds to $\pi(y_1, \ldots, y_n \mid \theta)$ and is used for maximum likelihood estimation (MLE). The sampling distribution provides information about uncertainty.
+
+- Bayesian Statistics: In Bayesian statistics, the joint distribution is written as $\pi(y_1, \ldots, y_n, \theta) = \pi(y_1, \ldots, y_n \mid \theta) \pi(\theta) = \pi(\theta \mid y_1, \ldots, y_n) \pi(y_1, \ldots, y_n)$.
+The posterior distribution, denoted as $\pi(\theta \mid y_1, \ldots, y_n)$, can be derived using Bayes' theorem: $\pi(\theta \mid y_1, \ldots, y_n) = \frac{\pi(y_1, \ldots, y_n \mid \theta) \pi(\theta)}{\pi(y_1, \ldots, y_n)} \propto \pi(y_1, \ldots, y_n \mid \theta) \pi(\theta)$.
+Bayesian inference combines estimation and distribution considerations by considering the posterior distribution.
+Relationship Between Bayesian Inference and MLE: Bayesian inference can be seen as a generalization of MLE-based classical inference. MLE corresponds to the mode of the posterior distribution when a uniform prior is used.
+
 
 ### From Mathematics to Computation
 - Derivative (classical) versus integration (Bayesian)
-  - MLE: find parameter values that maximize the likelihood function $\hat{\theta}=arg\ max_{\theta\in\Theta} L(\theta;y)$
-  - Bayesian: $\pi(\theta\mid y_1,\cdots,y_n)=\frac{\pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)}{\int\pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)d\theta}$
-- Classical statistics: a collection of efficient numerical algorithms for quantifying MLEs from a number of classes of models
-  - Historically, tabulated results
-  - Now, implemented in software such as SAS, SPSS, and R
+  - Maximum Likelihood Estimation (MLE): Finding parameter values that maximize the likelihood function, denoted as $\hat{\theta}=arg\ max_{\theta\in\Theta} L(\theta;y)$
+  - Bayesian: Calculating the posterior distribution $\pi(\theta\mid y_1,\cdots,y_n)$ using integration: $\pi(\theta\mid y_1,\cdots,y_n)=\frac{\pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)}{\int\pi(y_1,\cdots,y_n\mid \theta)\pi(\theta)d\theta}$
+- Classical statistics: A collection of efficient numerical algorithms for quantifying MLEs across various classes of models.
+  - Historically, results were tabulated.
+  - Nowadays, these algorithms are implemented in software packages such as SAS, SPSS, and R.
 - Bayesian statistics: Using Monte Carlo simulation to avoid integration
   - Markov chain Monte Carlo simulation (MCMC) algorithm -- drawing random numbers of $\theta$ from its density function (or a function proportional to its density function)
-  - Posterior distributions of model parameters -- evaluated using random samples from their posterior distributions
-  - The Bayesian posterior is proportional to $L(\theta;y_1,\cdots,y_n)\pi(\theta)$
-  - If $y_1,\cdots,y_n$ i.i.d., $L(\theta;y_1,\cdots,y_n)=\prod_{i=1}^n  L(\theta;y_i)$ and
-  - The posterior 
-  $$\log \left (\pi(\theta\mid y_1,\cdots,y_n) \right ) = \log \left (\pi(\theta)\right )+\sum_{i=1}^n\log \left (L(\theta;y_i)\right )$$
-- `Stan` via `rstan`in R:
-  - A program implements MCMC when $\log \left(\pi(\theta) \right )$ and $\log \left (L(\theta;y_i) \right )$ are provided.
+  - Evaluation of Posterior Distributions: Posterior distributions of model parameters are evaluated using random samples generated from their posterior distributions.
+  - The Bayesian posterior is proportional to the product of the likelihood function and the prior: $L(\theta;y_1,\cdots,y_n)\pi(\theta)$
+  - If $y_1,\cdots,y_n$ i.i.d., $L(\theta;y_1,\cdots,y_n)=\prod_{i=1}^n  L(\theta;y_i)$.
+  - If the observations $y_1,\cdots,y_n$ are independent and identically distributed (i.i.d.), the likelihood function becomes the product of individual likelihoods: $L(\theta;y_1,\cdots,y_n)=\prod_{i=1}^n L(\theta;y_i)$.
+  - The logarithm of the posterior is given by: 
+  $\log\left (\pi(\theta\mid y_1,\cdots,y_n) \right ) = \log \left (\pi(\theta)\right )+\sum_{i=1}^n\log \left (L(\theta;y_i)\right )$
+- `Stan` via `rstan` in R:
+  - The `Stan` program implements the MCMC algorithm when the logarithm of the prior $\log\left(\pi(\theta)\right)$ and the logarithm of the likelihood function $\log\left(L(\theta;y_i)\right)$ are provided.
 
 ### Example -- Snake Fungal Disease
 - Estimating the prevalence of fungal infection in a population of protected snake species in Michigan
   - qPCR test with false positive rate (probability) $f_p$ and false negative rate $f_n$.
   - In a sample of $n$ snakes, $y$ tested positive
   - What is the prevalence of the disease in the population ($\theta$)
-- Response variable $y$ modeled by the binomial distribution
-  $$
-  y \sim Bin(p, n)
-  $$
-  where $p$ is the probability of testing positive, and $p = \theta(1-f_n)+(1-\theta)f_p$
+- Response variable $y$ modeled by the binomial distribution $y \sim Bin(p, n)$ where $p$ is the probability of testing positive, and $p = \theta(1-f_n)+(1-\theta)f_p$
 - The likelihood function $L=p^y(1-p)^{n-y}$
 - Log likelihood: $\log(L) = y\log(p) +(n-y)\log(1-p)$
 - Using a beta distribution prior for $\theta$: $\pi(\theta) \propto \theta^\alpha(1-\theta)^{\beta}$
@@ -148,7 +150,7 @@ median(theta)
 quantile(theta, prob=c(0.05,0.95))
 ```
   - Bayesian 3: Using Metropolis-Hastings algorithm (See Section 2.4.1)
-  An acceptance-rejection method (Section 2.3.2) with a candidate-generating distribution function and the acceptance probability probability is based on the ratio of posterior density function at two points. As a result, we only need to know the posterior density upto a proportional constant.   
+  An acceptance-rejection method (Section 2.3.2) with a candidate-generating distribution function and the acceptance probability probability is based on the ratio of posterior density function at two points. As a result, we only need to know the posterior density up to a proportional constant.   
 
 ```{R}
 set.seed(10)
@@ -187,7 +189,8 @@ quantile(theta, prob=c(0.05,0.95))
   
   $\pi(\theta\mid y_1,\cdots,y_n) \propto \pi(\theta)L(\theta; y_1,\cdots,y_n)$
   
-  Using Stan, we draw random samples of the unknown parameters $\theta$ from their joint posterior distribution. As we know from the Metropolis-Hastings algorithm, we can draw random samples by knowing the posterior density upto a proportional constant. The rest can be automatic using a computer. In a Bayesian computing software, we need to provide three groups of information to formulate the MCMC algorithm.       1. Input data (e.g., $y, n, f_p, f_n$)
+  Using Stan, we draw random samples of the unknown parameters $\theta$ from their joint posterior distribution. As we know from the Metropolis-Hastings algorithm, we can draw random samples by knowing the posterior density upto a proportional constant. The rest can be automatic using a computer. In a Bayesian computing software, we need to provide three groups of information to formulate the MCMC algorithm.
+      1. Input data (e.g., $y, n, f_p, f_n$)
       2. Parameters to be estimated 
       3. The likelihood function and prior distributions 
 Stan puts the above three groups of information in three code blocks. For the snake fungal example, we have $x=5, n=20$, $f_p=0.07$ and $f_n=0.05$. The response variable ($y$) is assumed to follow a binomial distribution $y \sim Bin(p, n)$, with the probability of a positive result being $p=\theta(1-f_n)+(1-\theta)f_p)$. Translating to Stan, we have
@@ -247,7 +250,7 @@ Before we can run the Stan (code `snake_code1`), we need to load the package `rs
 
 ```{R}
 packages(rv)
-packages(rstan)
+require(rstan)
 packages(car)
 rstan_options(auto_write = TRUE)
 options(mc.cores = min(c(parallel::detectCores(), 8)))
@@ -300,7 +303,7 @@ With Stan, Bayesian inference can be readily applied to more complex problems th
 ### Information accumulation
 Suppose that we conducted a new survey of the snake fungal disease a year after the initial study to update the prevalence. Or, we may want to evaluate the temporal trend of the disease prevalence in the subsequent years. 
 
-All the methods we used resulted in a consistent estimate of the prevalence of about 22% with a wide range of between 0.07-0.4. The uncertainty reflects the small sample size. Suppose that we now have a new sample of $n_2=12$ and $y_2=4$. Using classical statistics, we either estimate the prevalence using only the second sample, assuming that the prevalence has changed or combine the data (i.e., $n=35$ and $y=9$), assuming the population stays the same. 
+All the methods we used resulted in a consistent estimate of the prevalence of about 22% with a wide range of between 0.07-0.4. The uncertainty reflects the small sample size. Suppose that we now have a new sample of $n_2=12$ and $y_2=4$. Using classical statistics, we either estimate the prevalence using only the second sample, assuming that the prevalence has changed or combine the data (i.e., $n=32$ and $y=9$), assuming the population stays the same. 
 
 With a Bayesian approach, we can summarize the posterior of $\theta$ from the first sample to form a prior of $\theta$ and update the prior using the new data. We typically use a beta distribution to summarize the distribution of a probability. Given the mean and standard deviation of 0.23 and 0.11 (from the Stan model), we propose a beta distribution with parameters $\alpha= 3.52$ and $\beta= 11.56$ (based on the method of moments). The prior can also be from similar studies elsewhere. All we need is an estimate of the mean and a likely range. We can treat the likely range as the usual 95% confidence interval (roughly 4 times standard deviation), from which derive a rough estimate of the standard deviation.  
 ```{R}
@@ -389,7 +392,7 @@ Pr(theta>prior)
 
 ```
 
-## Realistic modeling
+### Realistic modeling
 Most likely, we don't know exactly the values of $f_p$ and $f_n$. But we may have prior knowledge on their likely values, from which we can derive prior distributions of $f_p$ and $f_n$. For example, the values $f_p=0.07$ and $f_n=0.05 are estimated from similar tests elsewhere based on over 50 tests. We can use the beta distribution to quantify the prior knowledge:
 ```{R}
 a_p <- 0.07*50

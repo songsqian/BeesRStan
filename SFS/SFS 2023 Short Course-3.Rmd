@@ -31,7 +31,7 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 ## Hierarchical Models 
 A simple start -- setting environmental standard in the Everglades
 
-Richardson et al (2007) reported a mesocosm study of wetland ecosystem responding to elevated phosphorous (P) input. The study was conducted in the Everglades of South Florida. A phosphorus gradient was created using a series of artificial flumes, from which changes in the mesocosm ecosystem were observed. Researchers calculated total P (TP) thresholds that will induce large changes in algae, macroinvertebrates, and macrophytes communities using 12 biological indicators. These indicators represent a combination of how fast the indicators would respond to changes in TP concentrations. They reported the 12 threshold means and their 95% intervals. We used the 95% intervals (typically mean plus/minus 2 standard error) to derive the standard deviation of the estimated means.
+Richardson et al. (2007) conducted a mesocosm study in the Everglades of South Florida to investigate the response of wetland ecosystems to elevated phosphorus (P) input. They created a phosphorus gradient using artificial flumes and observed changes in the mesocosm ecosystem. The researchers determined the thresholds of total phosphorus (TP) concentrations that would lead to significant changes in algae, macroinvertebrates, and macrophytes communities. To quantify these thresholds, they utilized 12 biological indicators that represented how quickly the indicators would respond to changes in TP concentrations. The study reported the means of the 12 thresholds along with their corresponding 95% confidence intervals. In our analysis, we employed the 95% confidence intervals (typically calculated as the mean plus/minus 2 standard errors) to estimate the standard deviation of the mean thresholds.
 ```{R}
 y.hat <- c(19.2,  13,  13, 12.4, 8.2, 19.9, 18.3,
            15.6, 14.8, 14.5, 23.5, 15.3)
@@ -65,27 +65,35 @@ abline(v=15)
 
 ```
 
-Richardson et al (2007) recommended that the TP concentration standard should be 15 $\mu$g/L, close to the average of the 12 means and the mean of Utricularia purpurea, a keystone species of the Everglades wetland ecosystem.  Because the legal requirement of setting a TP standard to protect "the natural balance of flora and fauna of the Everglade" is scientifically vague, a threshold based on one species is always less convincing, even though the value is close to the average of the change points of all metrics examined.  Each metric represents a specific aspect of the ecosystem (individual species or species groups).  These species-specific indicators by themselves cannot describe the natural balance at the ecosystem level.  Suppose that there are a total of $n$ indicators to represent the Everglades wetland ecosystem and we have estimates of thresholds of these indicators ($\phi_j, j=1,\cdots,n$).  Although each individual threshold cannot adequately represent the natural imbalance, the distribution of all thresholds should provide a quantitative summary of how TP concentration levels would affect the ecosystem as a whole. Because the 12 metrics were carefully selected to represent the Everglades wetland ecosystems, ecosystem-level threshold distribution can be estimated from these individual-level thresholds.  Instead of using the average of the estimated change points of the 12 metrics, we integrate these estimates using a hierarchical model to properly represent the estimation uncertainty we have about these estimates.
+Richardson et al. (2007) recommended that the total phosphorus (TP) concentration standard should be 15 $\mu$g/L, which is close to the average of the 12 means and the mean of Utricularia purpurea, a keystone species in the Everglades wetland ecosystem. However, setting a TP standard solely based on one species is less convincing due to the scientifically vague legal requirement of protecting the natural balance of flora and fauna in the Everglades. Although the value is close to the average of all examined metrics, each metric represents a specific aspect of the ecosystem and cannot alone describe the natural balance at the ecosystem level.
 
-The data we have are the estimated change point $\hat{\phi}_j$ and its standard deviation $\hat{\sigma}_j$. These two numbers provide an indicator-level model:
+Each metric represents a specific aspect of the ecosystem (individual species or species groups).  These species-specific indicators by themselves cannot describe the natural balance at the ecosystem level.  Suppose that there are a total of $n$ indicators to represent the Everglades wetland ecosystem and we have estimates of thresholds of these indicators ($\phi_j, j=1,\cdots,n$).  Although each individual threshold cannot adequately represent the natural imbalance, the distribution of all thresholds should provide a quantitative summary of how TP concentration levels would affect the ecosystem as a whole. Because the 12 metrics were carefully selected to represent the Everglades wetland ecosystems, ecosystem-level threshold distribution can be estimated from these individual-level thresholds.  Instead of using the average of the estimated change points of the 12 metrics, we integrate these estimates using a hierarchical model to properly represent the estimation uncertainty we have about these estimates.
+
+The available data are the estimated change point $\hat{\phi}_j$ and its standard deviation $\hat{\sigma}_j$. These two numbers form an indicator-level model:
 $$
   \hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j).
 $$
-Information in the data is summarized in the estimated mean and standard deviation $\hat{\phi}_j$ and $\hat{\sigma}_j$.  When we have no additional information to determine the relative magnitude of the threshold for different metrics, we can assume that $\theta_j$'s can be modeled as follows
+The estimated mean and standard deviation, $\hat{\phi}_j$ and $\hat{\sigma}_j$, summarize the information in the data. In the absence of additional information to determine the relative magnitude of thresholds for different metrics, we assume that the $\theta_j$'s can be modeled as follows:
 $$
 \theta_j \sim N(\mu, \tau^2),
 $$
-that is, assuming a common prior distribution for $\theta_j$.  The above two equations form the simplest hierarchical model. It is the natural extension of the Stein's paradox of the 1960s.  Here we have 12 thresholds to estimate at the same time and Stein's paradox told us that estimating them one at a time is mathematically inadmissible. Shrinking these individually estimated means towards the overall mean can always improve the overall estimation accuracy.  Statistical development since Stein's paradox has shown the value of hierarchical modeling in applied fields. In my opinion, hierarchical modeling is a key to address environmental and ecological data analysis problems where variables representing different levels of spatial, temporal, and organizational aggregations. When data analysis crossing different levels of aggregation, the hierarchical structure of the aggregation can be properly modeled under a hierarchical modeling framework. Without properly addressing data hierarchy, we can be tripped by Simpson's paradox. 
+which represents a common prior distribution for $\theta_j$. This hierarchical model extends the concept of Stein's paradox from the 1960s. With 12 thresholds to estimate simultaneously, Stein's paradox informs us that estimating them individually is mathematically inadmissible. By shrinking the individually estimated means towards the overall mean, we can improve the accuracy of the overall estimation. Hierarchical modeling has shown its value in applied fields since Stein's paradox, particularly in addressing environmental and ecological data analysis problems that involve variables representing different levels of spatial, temporal, and organizational aggregations. Failing to properly address data hierarchy can lead to Simpson's paradox. 
 
-This common prior distribution in the Everglades problem here reflects (1) our understanding that $\theta_j$s are likely to be different for different metrics, and (2) our lack of understanding on how $\theta_j$s are different from each other.  The variance parameter $\tau^2$ is the between metric variance.  we expanded the meaning of $\tau^2$ to be the variance among all possible metric means (not just the 12 metrics represented in the data).  This model links all metrics together through the common prior distribution $N(\mu,\tau^2)$.  As we have no prior knowledge of $\mu$ and $\tau^2$, we will use Stan default weakly informative priors.  Viewing from the perspective of modeling individual metrics, each time a metric mean is modeled (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$) we are using a Bayesian estimation and the unknown metric mean $\theta_j$ is given a prior distribution. The prior distribution parameters in this case are estimated based on data from other metrics.  If we have another metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation using informative prior.  The informative prior is derived from  other similar quantities.  This interpretation gives me the idea of treating a prior as the distribution of similar quantities. Mathematically we call these similar quantities exchangeable units. Similar studies from exchangeable units (e.g., eutrophication studies in different lakes) are often known as parallel studies. Exchangeable units can be spatial (e.g., different lakes, different eco-regions when study climate change impacts), temporal (observations from the same location over different seasons or years), and, as in this example, organizational (different metrics representing different aspects of an ecosystem).  I find that we can think any environmental and ecological data analysis problem as a hierarchical modeling problem.   
+The common prior distribution used in the Everglades problem reflects two key considerations: (1) our understanding that the $\theta_j$ values are likely to differ across different metrics, and (2) our lack of understanding regarding the specific differences between the $\theta_j$ values. The variance parameter $\tau^2$ represents the between-metric variance. In this context, we expanded the meaning of $\tau^2$ to encompass the variance among all possible metric means, not just the 12 metrics represented in the available data. This hierarchical model connects all metrics together through the common prior distribution $N(\mu,\tau^2)$.
 
-Back to the Everglades example, we illustrate the famed shrinkage effect of the hierarchical modeling, which is responsible for the improved overall estimation accuracy.  (Here is an intuitive explanation of why shrinking estimates towards the overall mean would improve overall accuracy. When we say that an estimate has error, we mean that the estimated value is either too high or too low. With only one parameter to estimate, we have no reason to believe the estimate is too high or too low. As a result, we prefer an unbiased estimator.  On average we are right. When we have estimates of the same parameter from multiple exchangeable units, the overall mean of these means provides a reasonable reference on whether an individual estimate is likely too high or too low. As a result, shrinking these estimates towards the overall mean is more likely to improve these estimates.)
+Since we have no prior knowledge about the values of $\mu$ and $\tau^2$, we will utilize Stan default weakly informative priors. From the perspective of modeling individual metrics, each time we model a metric mean (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$), we employ Bayesian estimation and assign a prior distribution to the unknown metric mean $\theta_j$. In this case, the prior distribution parameters are estimated based on data from other metrics. If we have an additional metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation utilizing an informative prior. This informative prior is derived from other similar quantities. This interpretation leads to the concept of treating a prior as the distribution of similar quantities, known mathematically as exchangeable units. Studies involving similar quantities from different contexts, such as eutrophication studies in various lakes, are often referred to as parallel studies. Exchangeable units can pertain to spatial aspects (e.g., different lakes, distinct eco-regions when studying climate change impacts), temporal aspects (observations from the same location over different seasons or years), and, as illustrated in this example, organizational aspects (different metrics representing various aspects of an ecosystem). I believe that any environmental and ecological data analysis problem can be approached as a hierarchical modeling problem, considering the inherent hierarchical structure of the data.
 
-A common computation problem in hierarchical model is the potentially strong correlation among the multiple means (i.e., $\theta_j$'s), especially when the number of exchangeable units is small.  The correlation is often a result of the difficulty in quantifying the hyper-parameters ($\mu, \sigma^2$). The Neal's funnel is a common phenomenon.  As we've seen earlier, we can reparameterize the model: instead of directly sampling $\theta_j$ as random variables, we use the relationship between a normal random variable with mean $\mu$ and standard deviation $\tau$ and the standard normal random variable $z \sim N(0,1)$:
+Returning to the Everglades example, we can observe the well-known shrinkage effect of hierarchical modeling, which is responsible for enhancing overall estimation accuracy. Let's provide an intuitive explanation of why shrinking estimates towards the overall mean leads to improved accuracy. When we say that an estimate has an error, we mean that the estimated value is either too high or too low. However, when we have only one parameter to estimate, we have no basis to believe that the estimate is biased towards being too high or too low. Thus, an unbiased estimator is preferred, as, on average, it tends to be correct.
+
+When we have estimates of the same parameter from multiple exchangeable units, the overall mean of these estimates serves as a reasonable reference to gauge whether an individual estimate is likely to be too high or too low. Consequently, shrinking these estimates towards the overall mean is more likely to improve their accuracy.
+
+One common computational issue in hierarchical models arises from the potential strong correlation among the multiple means (i.e., $\theta_j$ values), especially when there are only a small number of exchangeable units. This correlation often stems from the difficulty in accurately quantifying the hyperparameters ($\mu, \sigma^2$). The phenomenon known as Neal's funnel is a typical manifestation of this correlation.
+
+As we discussed earlier, we can address this challenge through reparameterization of the model. Instead of directly sampling $\theta_j$ as random variables, we can utilize the relationship between a normally distributed random variable with mean $\mu$ and standard deviation $\tau$, and a standard normal random variable $z \sim N(0,1)$:
 $$
 \theta_j = \mu + \tau \times z_j.
 $$
-By defining $\theta_j$ as a transformed variable, we improve the Stan model's computatiopnal performance by avoiding directly sampling from them:
+By defining $\theta_j$ as a transformed variable, we can improve the Stan model's computational performance by avoiding directly sampling from $\theta_j$:
 ```{r}
 everg_stan <- "
 data {
@@ -177,7 +185,7 @@ abline(v=mu$mean)
 ```
 How should we determine the TP concentration standard? 
 
-It is mostly an ecological and environmental management question. Statistically, the question is whether we derive the standard based on the overall mean ($\mu$) or the distribution of all metrics: between the posterior distribution of $\mu$ and the hyper-distribution.  
+Determining the TP (total phosphorus) concentration standard is primarily an ecological and environmental management decision. From a statistical perspective, the question is whether we should derive the standard based on the overall mean ($\mu$) or consider the distribution of all metrics: between the posterior distribution of $\mu$ and the hyper-distribution.  
 ```{R}
 ## mu versus N(mu, tau)
 mu_tau <- rvnorm(1, everg_mu, everg_tau)
@@ -195,26 +203,33 @@ box()
 c(quantile(sims(everg_mu), prob=0.05), quantile(sims(mu_tau), prob=0.05))
 ```
 ## Hierarchical Structure and Big Data
-If we define "big data" as data from multiple sources and represent multiple levels of aggregation, most data we use in our work are big data.  For us, the age of big data means the age of hierarchical modeling.  When we don't properly address the hierarchical structure of the data, big data can almost always lead to misleading conclusions.
-
+If we define "big data" as data obtained from multiple sources and representing multiple levels of aggregation, it becomes evident that most of the data we utilize in our work falls into the category of big data. In our context, the era of big data coincides with the era of hierarchical modeling. Failing to appropriately address the hierarchical structure inherent in the data can often result in misleading conclusions when working with big data.
 ### The US National Lake Assessment data
-Qian et al (2019) discussed several studies published using data from US EPA's National Lakes Assessment program (NLA). Under NLA, over 3000 lake throughout the 48 contiguous states were surveyed in 2007 and 2012 to collect a large number of variables for assessing ecological status  of the nations lakes. Each visited lake was visited at most two times. 
+Qian et al (2019) examined various studies that utilized data from the US EPA's National Lakes Assessment program (NLA). The NLA program involved surveying over 3000 lakes across the contiguous 48 states in 2007 and 2012, collecting a wide range of variables to assess the ecological status of the nation's lakes. Each lake was visited a maximum of two times during the survey.
 
-EPA researchers published a number of papers using NLA data to derive national nutrient criteria. They typically use lake mean values of relevant variables to establish empirical relationship between variables representing ecological responses (e.g., chlorophyll a and microsystin concentrations) and variables representing nutrient enrichment (e.g., TP and TN concentrations). Qian et al (2019) suggested that such practice is prone to the trap of Simpson's paradox (correlation established at one level of aggregation can be very different from the same correlation at a different level of aggregation).  Simpson's paradox is relevant because the nutrient criteria are established at a national (spatial) aggregated level, whereas the resulting criteria must be implemented at individual lakes over time.  
+EPA researchers have published numerous papers utilizing the NLA data to establish national nutrient criteria. Typically, they employ lake mean values of relevant variables to establish empirical relationships between ecological response indicators (such as chlorophyll a and microcystin concentrations) and variables indicating nutrient enrichment (such as TP and TN concentrations). However, Qian et al (2019) cautioned that this approach is susceptible to Simpson's paradox.
 
-Statistically speaking, we must properly model the hierarchical structure represented by the data.  By data hierarchical structure, we mean the observation values and their attributes.  In a typical dataset (think about an Excel spreadsheet format), we arrange data in a two dimensional array, rows representing observations and columns representing variables.  In R, we use data frame (the most commonly used format).  In both cases, variables can be classified into measured variables and identification variables.  Measured variables are typically numeric and identification variables are categorical in nature.  For example, `chla`, `tp`, and `tn` in our data are measured variables and `id` is identification variable.  With `id`, we group measured variable into parallel units.  (The concept of measured and identification variables is explicitly used in packages from the `tidyverse` family.)  
+Simpson's paradox arises when correlations established at one level of aggregation differ significantly from those at a different level of aggregation. In the context of establishing nutrient criteria, Simpson's paradox becomes relevant because the criteria are determined at a national aggregated level (spatially), whereas the resulting criteria must be implemented at individual lakes over time.
 
-Suppose that we have only measured `chla` from these lakes and the lake ids do not provide lake-specific information. If we want to know the average `chla` values for these lakes, we can assume `log_chla` values can be approximated by the normal distribution and make statistical inference about `chla` from lake $j$ using the model:
+This highlights the potential pitfalls of solely relying on aggregated correlations when establishing nutrient criteria. The complex dynamics and interactions within individual lakes can lead to different relationships between ecological responses and nutrient enrichment compared to the overall aggregated level. Therefore, careful consideration is needed to account for the nuances and potential biases introduced by Simpson's paradox when establishing and implementing nutrient criteria at different levels of spatial and temporal aggregation.
+
+From a statistical perspective, it is crucial to accurately model the hierarchical structure inherent in the data. This hierarchical structure refers to the organization of observation values and their corresponding attributes. In a typical dataset, such as one presented in an Excel spreadsheet format, data is arranged in a two-dimensional array. The rows represent individual observations, while the columns represent different variables. In the popular statistical programming language R, data is often organized using data frames, which is the commonly used format for storing and manipulating data.
+
+In this hierarchical structure, variables can be categorized into two main types: measured variables and identification variables. Measured variables typically consist of numerical values that represent the observed measurements, while identification variables are categorical in nature and serve to identify or group the measured variables. For instance, in our dataset, variables such as chla, tp, and tn would be considered measured variables, while the variable id would be an identification variable. The concept of measured and identification variables is explicitly utilized in packages from the tidyverse family, which provide a set of powerful tools for data manipulation and analysis.
+
+By incorporating the hierarchical structure of the data, we can effectively group the measured variables into parallel units using the identification variable. This hierarchical modeling approach allows us to capture the dependencies and relationships within the data, leading to more accurate and meaningful statistical analyses.
+
+Suppose we only have measurements of chla from these lakes, and the lake identifiers do not provide specific information about each lake. If we wish to determine the average chla values for these lakes, we can approximate the logarithm of chla values, denoted as log_chla, using a normal distribution. To make statistical inferences about chla for lake $j$, we can employ the following model:
 $$
 \log(chla_{ij}) \sim N(\mu_j, \sigma^2_j)
 $$
-The parameters $\mu_j$ and $\sigma^2_j$ will be estimated when we have data.  In Bayesian statistics, we need to use priors for these unknown parameters. In most cases, we are largely interested in the mean parameters.  For a mean parameter, the central limit theorem suggests that the prior of $\mu_j$ should also be a normal distribution.  
+The parameters $\mu_j$ and $\sigma^2_j$ will be estimated once we have the data. In Bayesian statistics, it is necessary to assign prior distributions to these unknown parameters. In most cases, our primary interest lies in the mean parameters. As per the central limit theorem, it is reasonable to assume a normal distribution as the prior for $\mu_j$:
 $$
 \mu_j \sim N(\theta, \tau^2)
 $$
-That is, we must impose priors for all 27 lakes in this problem. Given that we have no specific information about these lakes, we do not know how to determine the likely relative magnitudes of `chla` in these lakes. In other words, we have no reason to give a high (or lower) prior mean for lake 1 than the prior mean for lake 2. As a result, to reflect our ignorance of the relative magnitudes among the lakes, we are compelled to assign a common prior to all 27 lakes. The above equation is the manifestation of our ignorance: we know that lakes mean `chla`s are likely different, but not how they are different from each other. Without further information, we use non-informative priors for $\theta$ and $\tau^2$.  The hierarchical model is a generalization of Stein's paradox (and James-Stein estimator) in classical statistics.  The consequence of imposing this common prior is the shrinkage effect, illustrated in the Everglades example.  The lakes are known to be exchangeable with respect to lake-specific $\mu_j$.  
+Consequently, we need to establish prior distributions for all 27 lakes involved in this problem. However, since we lack specific information about these lakes, we are unable to determine the relative magnitudes of chla values across the lakes. In other words, we cannot assign a higher or lower prior mean to lake 1 compared to lake 2. Therefore, to account for our lack of knowledge regarding the relative magnitudes among the lakes, we must assign a common prior to all 27 lakes. The equation above represents our ignorance: while we acknowledge that the mean chla values for the lakes are likely to differ, we do not possess any information about the specific differences. In the absence of further information, we employ non-informative priors for $\theta$ and $\tau^2$. This hierarchical modeling approach is a generalization of Stein's paradox (and the James-Stein estimator) in classical statistics. By imposing this common prior, we observe the shrinkage effect demonstrated in the Everglades example. The lakes are considered exchangeable with respect to their lake-specific $\mu_j$ values.
 
-To illustrate this problem, Qian et al (2019) use data from lakes shared by NLA and another large lake database (LAGOS) to compare how Simpson's paradox can be manifested in lake eutrophication studies.
+To illustrate this issue, Qian et al. (2019) utilized data from lakes that were included in both the NLA and another extensive lake database known as LAGOS. They aimed to compare how Simpson's paradox can manifest itself in studies examining eutrophication in lakes.
 
 The data: USA-NLA and LAGOS. We pick lakes shared in the two data bases.
 
@@ -421,19 +436,21 @@ points(sharedLakes$lg_lon_mean[sharedLakes$lg_n>10], sharedLakes$lg_lat_mean[sha
 
 ```
 
-We selected lakes from LAGOS with at least 10 observations for this analysis.  Comparing lake-specific models fit using hierarchical model to the common practice of either combining data from all lakes or fitting a model using lake means. The goal of this example is to illustrate the importance of accounting for data hierarchical structure. The 27 lake selected here have at least 27 observations. We fit the typical log-log linear model of chlorophyll a ($chla$) predicted by total nitrogen ($tn$), total phosphorous ($tp$), and their interaction. Using the TP:TN interaction was inspired by Qian (2016) who suggested that the interaction slope is indicative of a lake's trophic status: a negative (0, positive) interaction slope indicates that the lake is likely euthophic (mesotrophic, oligotrophic).
+We selected lakes from LAGOS with at least 10 observations for this analysis.  By comparing the lake-specific models fitted using hierarchical modeling to the common practice of either combining data from all lakes or fitting a model using lake means, we aim to highlight the significance of accounting for the hierarchical structure of the data. The selected set of 27 lakes in this example each have at least 27 observations.
 
-When we have `tp` and `tn` observations from these lakes, we can no longer claim ignorance because TP and TN are nearly always positively correlated with chla. But when we model the relationship between $chla$ and $TP$ and $TN$ using a log-log linear model:
+In our analysis, we employed the typical log-log linear model to predict chlorophyll-a ($chla$) based on total nitrogen ($tn$), total phosphorous ($tp$), and their interaction. The decision to include the TP:TN interaction was inspired by Qian (2016), who suggested that the slope of the interaction can indicate a lake's trophic status: a negative (0, positive) interaction slope suggests eutrophic (mesotrophic, oligotrophic) conditions in the lake.
+
+When we have observations for both `tp` and `tn` from these lakes, we can no longer assume ignorance since TP and TN are generally positively correlated with `chla`. However, in modeling the relationship between $chla$ and $TP$ and $TN$ using a log-log linear model:
 $$
 \log(chla_{ij}) = \beta_{0j} + \beta_{1j}\log(TP)+\beta_{2j}\log(TP)+\beta_{3j}\log(TP)\log(TN)+\epsilon_{ij}
 $$
-we may claim ignorance on how regression coefficients vary among lakes. As a result, we can impose a common prior for these coefficients:
+we can still be uncertain about how the regression coefficients vary among lakes. Hence, we can impose a common prior for these coefficients:
 $$
 \begin{pmatrix}\beta_{0j}\\ \beta_{1j} \\ \beta_{2j} \\ \beta_{3j} \end{pmatrix} \sim MVN \begin{bmatrix}\begin{pmatrix}\mu_0\\ \mu_1 \\ \mu_2 \\ \mu_3 \end{pmatrix}, \Sigma \end{bmatrix}
 $$
 Now we say that these lakes are exchangeable with respect to model coefficients. 
 
-The R package `lme4` provides efficient algorithms to estimate these parameters using restricted maximum likelihood method.  Although the algorithms are not efficient in estimating the variance parameters, the algorithms are fast and often provide good approximations. We can use `lme4` to explore different model forms to decide how to model the data the best and move the chosen model form to Stan for accurate quantification. 
+The R package `lme4` offers efficient algorithms for estimating these parameters using the restricted maximum likelihood method. While these algorithms may not be as effective in estimating the variance parameters, they are fast and often provide satisfactory approximations. We can leverage the capabilities of `lme4` to explore various model forms and determine the most suitable approach for modeling the data. Once we have identified the preferred model form, we can then transition to using Stan for precise quantification and analysis.
 
 - Comparing different spatial aggregations
 ```{R}
@@ -622,47 +639,20 @@ See Section 6.4.3 of Qian et al (2022) for details on programming multilevel mod
 
 ### Why Simpson's paradox
 
-What is the cause of Simpson's paradox? 
+What is the cause of Simpson's paradox?
 
-There are numerous discussions on the causes of and the means to
-avoiding Simpson's paradox.  We discussed two main lines of arguments.
-Lindley and Novick (1981) emphasized the concept of exchangeable
-units, suggesting that the fallacy lies in applying results of a model
-to subjects that are not exchangeable with the data used for model
-development.  Pearl et al (2016) stressed the importance of
-properly outlining the causal structure of the problem, particularly,
-identifying hidden causes.  We use the paper by Cheng and Basu (2017)
-to illustrate the importance of these two lines of arguments.
+The cause of Simpson's paradox has been extensively discussed, along with strategies to avoid it. We will highlight two main lines of argumentation that shed light on this phenomenon. Lindley and Novick (1981) focused on the concept of exchangeable units and emphasized that the fallacy arises when applying model results to subjects that are not exchangeable with the data used to develop the model. On the other hand, Pearl et al. (2016) emphasized the significance of accurately delineating the causal structure of the problem, particularly in identifying hidden causes. To illustrate the importance of these two lines of arguments, we will refer to the study conducted by Cheng and Basu (2017).
 
-Cheng and Basu (2017) compiled a data set of 600 lentic water bodies
-(lakes, reservoirs, and wetlands) around the globe from several dozen
-studies, including the North American Treatment Database
-(NATD) v2.0 for constructed wetlands.  In NATD, most wetlands
-were represented by a small number of records which were often the
-temporal (e.g., annual) and spatial (e.g., segments) averages of each
-of the key relevant factors examined in their study (i.e., flow,
-hydraulic residence time, and nutrient loading). Using the data, they
-calculated, for each water, the nutrient retention as a ratio of the
-amount nutrient retained in the water over the input loading:
+Cheng and Basu (2017) compiled a dataset consisting of 600 lentic water bodies, including lakes, reservoirs, and wetlands, from various studies, such as the North American Treatment Database (NATD) v2.0 for constructed wetlands. In NATD, wetlands were often represented by a small number of records, typically the temporal (e.g., annual) and spatial (e.g., segments) averages of key factors like flow, hydraulic residence time, and nutrient loading. Using this data, they calculated the nutrient retention for each water body as the ratio of the retained nutrient mass to the input loading:
 $$ 
 R=\frac{M_{in}-M_{out}}{M_{in}}
 $$  
-where $M_{in}$ is the input mass loading and $M_{out}$ is the output
-loading.  In addition, they estimated two parameters that are part of
-water quality models commonly used to simulate the fate and transport
-of contaminants.  Specifically for model phosphorus retention in
-wetlands, they are the effective removal rate constant $k$ and the
-hydraulic residence time $\tau$.  In a typical simplified water
-quality model based on the first-order reaction mechanism, these two
-parameters are used to estimate nutrient retention:
-- Assuming the water is well mixed, use the continuously stirred
-  tank reactor (CSTR) model
+where $M_{in}$ is the input mass loading and $M_{out}$ is the output loading.  Additionally, they estimated two parameters commonly used in water quality models to simulate the fate and transport of contaminants, specifically for phosphorus retention in wetlands. These parameters are the effective removal rate constant $k$ and the hydraulic residence time $\tau$. In a simplified water quality model based on the first-order reaction mechanism, these parameters are used to estimate nutrient retention.
+- Assuming the water is well mixed, the continuously stirred tank reactor (CSTR) model is used:
   $$
   k = \frac{R}{1-R}\left (\frac{1}{\tau}\right ).
   $$
-- Assuming the water flows from inlet to outlet without
-  longitudinal diffusion and dispersion, use the plug-flow reactor
-  (PFR) model
+- Assuming the water flows from inlet to outlet without longitudinal diffusion and dispersion, the plug-flow reactor (PFR) model is used:
   $$
   k = \log(1-R)\left (\frac{1}{\tau}\right ).
   $$
@@ -672,14 +662,7 @@ $\tau$ as the predictor variable and $k$ as the response variable:
 $$
 \log(k_j) = \beta_0+\beta_1\log(\tau_j)+\epsilon_j
 $$
-where $j$ represents individual waters.  They showed that the
-estimated slope $\beta_1$ is negative, suggesting that the shorter the
-hydraulic residence time ($\tau$) is, the larger the phosphorus
-effective removal rate constant ($k$) is.  Because a wetland's $\tau$
-is positively correlated with its surface area, Cheng and Basu (2017)
-concluded that small wetlands are more effective in removing
-phosphorus over the landscape than large wetlands on a per unit area
-basis ($k$).
+where $j$ represents individual waters.  They found that the estimated slope $\beta_1$ was negative, indicating that as the hydraulic residence time ($\tau$) decreases, the phosphorus effective removal rate constant ($k$) increases. Based on the positive correlation between a wetland's $\tau$ and its surface area, Cheng and Basu (2017) concluded that small wetlands are more effective at removing phosphorus per unit area compared to large wetlands.
 
 ```{R}
 CB_data <- read.csv(paste(dataDIR, "ChengBasu.csv", sep="/"))
@@ -690,19 +673,7 @@ CB_data$Wetland <- 1
 CB_data$Wetland[substring(CB_data$Type, 2, 2)!="W"] <- 0
 ```
 
-We illustrate the issues with this analysis in two steps.
-
-First, we examine the meaning of model coefficients using the
-exchangeable concept.  The model in the previous equation is
-inevitably a model for individual waters.  As a result, fitting the
-model using combined data from lakes, reservoirs, and wetlands combines nonexchangeable units together and is
-susceptible to Simpson's paradox.  We fit the same model using combined data from lakes, reservoirs, and
-wetlands, and compare the resulting model coefficients to the
-coefficients from the same model fit to data from lakes, reservoirs,
-and wetlands separately.  The slope estimated using the combined data
-is much lower than the slopes estimated using data from the three
-types of water separately:
-
+First, we examine the interpretation of model coefficients using the concept of exchangeability. The model described in the previous equation is inherently a model for individual water bodies. Therefore, when fitting the model using combined data from lakes, reservoirs, and wetlands, we are combining nonexchangeable units and exposing ourselves to Simpson's paradox. To illustrate this, we fit the same model using the combined data from lakes, reservoirs, and wetlands, and compare the resulting model coefficients with the coefficients obtained from fitting the same model to the data from lakes, reservoirs, and wetlands separately. Interestingly, the slope estimated using the combined data is significantly lower than the slopes estimated using the data from the three types of water bodies separately:
 ```{R}
 ## all data
 lm1_all_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
@@ -750,23 +721,12 @@ line.plots(slp_pfr[,1],slp_pfr[,2], yaxis=2, xlab="slopes", ylab="",
            yaxisLab =  rownames(slp_pfr))
 ```
 
-We can further fit the model to data from individual wetlands.  Using
-six wetlands in the database (with more than 10 observations), we
-estimate the wetland-specific slopes using a hierarchical model
-assuming the wetland-specific regression coefficients are
-exchangeable.  The six wetlands range in mean size (by volume) from
-5.24 to 47,585.27 m$^3$.  Using the concept of exchangeable units, we
-recognize that observations from the wetland with an average volume of
-5.24 m$^3$ cannot be exchangeable with observations from the wetland
-with an average volume of 47,585.27 m$^3$.  Consequently, we cannot
-directly combine data from these wetlands.  However, by assuming
-individual wetlands are exchangeable with respect to the regression
-model coefficients, we can partially pool data from multiple wetlands
-using a hierarchical model.  The slopes for the smallest and the
-largest wetlands are not different from 0 (larger than the slope
-estimated using the combined wetland data), while the slopes of the
-four intermediate sized wetlands are either highly uncertain (wetland
-514) or well below the slope estimated using the combined wetland data.  
+To gain further insights, we proceed to fit the model using data from individual wetlands. We select six wetlands from the database that have more than 10 observations and estimate wetland-specific slopes using a hierarchical model, assuming that the regression coefficients for each wetland are exchangeable. These six wetlands vary greatly in size, with mean volumes ranging from 5.24 to 47,585.27 m$^3$.
+
+By considering the concept of exchangeable units, we acknowledge that observations from the wetland with an average volume of 5.24 m$^3$ cannot be treated as exchangeable with observations from the wetland with an average volume of 47,585.27 m$^3$. Therefore, direct combination of data from these wetlands is not appropriate. However, by assuming exchangeability of individual wetlands with respect to the regression model coefficients, we can partially pool the data from multiple wetlands using a hierarchical model.
+
+The results reveal interesting patterns. The slopes estimated for the smallest and largest wetlands are not significantly different from 0 (although larger than the slope estimated using the combined wetland data). In contrast, the slopes of the four intermediate-sized wetlands either exhibit high uncertainty (e.g., wetland 514) or are notably smaller than the slope estimated using the combined wetland data.
+
 ```{R}
 CB_wetland <- CB_data[CB_data$Wetland==1,]
 CB_wetland$sites <- as.numeric(CB_wetland$Year)
@@ -812,60 +772,23 @@ line.plots(lmer_slp_cstr[,1],lmer_slp_cstr[,2], yaxis=2, ylab="", xlab="slopes",
            yaxisLab=rownames(lmer_slp_cstr))
 ```
 
-By now, we recognize that the variation
-in estimated slopes is a manifestation of Simpson's paradox.  The
-average model coefficients for all wetlands (labeled ``Mean slope'')
-are parameterized by the hyper-distribution model (i.e.,
-$\beta_j \sim N(\mu_\beta, \sigma_\beta^2)$).  The hyper-distribution
-mean ($\mu_\beta$) is most likely different from the estimated slope
-using combined wetland data.  The hyper-distribution mean has a clear
-physical meaning (the mean of the wetland-specific coefficients),
-whereas the slope estimated using combined data does not.
+At this point, it becomes evident that the variation in estimated slopes is a clear manifestation of Simpson's paradox. The average model coefficients for all wetlands, denoted as "Mean slope," are parameterized by the hyper-distribution model, in which the wetland-specific coefficients ($\beta_j$) are assumed to follow a normal distribution ($N(\mu_\beta, \sigma_\beta^2)$). It is highly likely that the hyper-distribution mean ($\mu_\beta$) differs from the slope estimated using the combined wetland data.
 
+The hyper-distribution mean holds a significant physical interpretation as it represents the average of the wetland-specific coefficients. In contrast, the slope estimated using the combined data lacks a clear and meaningful interpretation. Therefore, the hyper-distribution mean provides a more reliable and meaningful estimate of the true underlying relationship between the variables.
+
+By acknowledging Simpson's paradox and employing a hierarchical modeling approach, we can better account for the hierarchical structure of the data and obtain more accurate and interpretable estimates of the model coefficients.
 
 -- spurious correlation
-Second, we can explain the differences in estimated slopes at
-different levels of aggregation using causal inference, as in
-Tang et al (2019).  In this case, we don't have additional
-variables for such analysis.  However, we can examine the linear regression model from a causal analysis angle.  The two
-parameters in question ($k$ and $\tau$) represent two different
-aspects of a wetland and they are most likely independent of each
-other (Carleton and Montas, 2007; Hejzlar et al, 2007; Vollenweider 1975). In this case, the link between the two parameters is established by
-the percent removal ($R$ in the CSTR or PFR models).  The parameter
-$k$ reflects the intrinsic characteristics of a wetland, while $\tau$
-is a parameter determined by external input of water relative to the
-size of the wetland.  The percent removal is a function of both $k$
-and $\tau$ (approximating the amount of time the nutrient mass stays
-in the system).  In other words, the causal diagram for wetland
-phosphorus removal should be represented as
-$k \rightarrow\ R \gets\ \tau$, which means that $k$ and $\tau$
-together determine $R$, but $k$ and $\tau$ are independent of each
-other.  A spurious correlation between $k$ and $\tau$ arises when $R$
-is set to vary within a narrow range.  In computer science literature,
-$k$ and $\tau$ are known to be direction-separated (d-separated) by
-$R$.  If two variables are d-separated, the apparent correlation
-between them is most likely spurious. We can use
-a simulation to demonstrate the effect of this d-separation.  We
-randomly generate values of $k$ and $\tau$ to calculate $R$ using the
-CSTR model plus random noise
-($R_i=k_i\tau_i/(1+k_i\tau_i)+\epsilon_i$).  In this case, the
-parameters $k_i$ and $\tau_i$ were independently drawn from log-normal
-distributions with log means ($\mu_k = -2.726$ and $\mu_\tau = 1.914$)
-and log standard deviations ($\sigma_k = 1.371$ and
-$\sigma_\tau = 1.269$) calculated from the log values for $k$ and
-$\tau$ for TP from the data used by Cheng and Basu (2017).  We then
-use a scatter plot of the randomly drawn $k$ and $\tau$ to show the
-spurious correlation by highlighting the data points with $k$ and
-$\tau$ values resulted in $R$ values between 32\% and 65\%.  Cheng and Basu (2017) indicated that
-wetlands with a percent removal ($R$) between 32\% and 65\% are of
-``no significant differences between systems and across
-constituents.''  The (spurious) negative correlation between $k$ and
-$\tau$ shown by the highlighted data points in the following Figure is remarkably similar to the pattern reported in Cheng and Basu (2017) in their data analysis, which suggests that the
-conclusion that small wetlands are more effective in phosphorus
-retention on a per unit area basis is a result of the spurious
-correlation induced by the d-separated relationship between $k$ and
-$\tau$.
 
+Secondly, we can explore the differences in estimated slopes at various levels of aggregation using causal inference, as demonstrated in Tang et al. (2019). Although we lack additional variables for such an analysis, we can approach the linear regression model from a causal perspective. The two parameters of interest, $k$ and $\tau$, represent distinct aspects of a wetland and are likely independent of each other (Carleton and Montas, 2007; Hejzlar et al., 2007; Vollenweider, 1975).
+
+In this context, the connection between these parameters is established through the percent removal ($R$) in the CSTR or PFR models. The parameter $k$ reflects the inherent characteristics of a wetland, while $\tau$ represents a parameter determined by the external input of water relative to the wetland's size. The percent removal is influenced by both $k$ and $\tau$, as it approximates the duration the nutrient mass remains within the system. In other words, the causal diagram for wetland phosphorus removal can be represented as $k \rightarrow\ R \gets\ \tau$, indicating that $k$ and $\tau$ jointly determine $R" but they are independent of each other.
+
+However, a spurious correlation between $k$ and $\tau$ can emerge when $R$ exhibits narrow variation. In computer science literature, $k$ and $\tau$ are known to be "d-separated" by $R$. When two variables are d-separated, any apparent correlation between them is likely to be spurious. To illustrate this effect, we can employ a simulation. We randomly generate values of $k$ and $\tau$ and calculate $R$ using the CSTR model, introducing random noise ($R_i=k_i\tau_i/(1+k_i\tau_i)+\epsilon_i$).
+
+In this simulation, the parameters $k_i$ and $\tau_i$ are independently drawn from log-normal distributions with log means ($\mu_k = -2.726$ and $\mu_\tau = 1.914$) and log standard deviations ($\sigma_k = 1.371$ and $\sigma_\tau = 1.269$), derived from the log values of $k$ and $\tau$ for TP in the data analyzed by Cheng and Basu (2017). We then create a scatter plot of the randomly generated $k$ and $\tau$ values, highlighting the data points where the corresponding $R$ falls between 32% and 65%. Cheng and Basu (2017) indicated that wetlands with a percent removal ($R$) in this range exhibit "no significant differences between systems and across constituents."
+
+The highlighted data points in the scatter plot demonstrate the (spurious) negative correlation between $k$ and $\tau$, which strikingly resembles the pattern observed in Cheng and Basu (2017) during their data analysis. This similarity suggests that the conclusion stating small wetlands are more effective in phosphorus retention on a per unit area basis may result from the spurious correlation induced by the d-separated relationship between $k$ and $\tau$.
 ```{R}
 mu_k <- mean(log(CB_data$k_TP_CSTR[CB_data$Wetland==1 & CB_data$k_TP_CSTR>0]),
              na.rm=TRUE)

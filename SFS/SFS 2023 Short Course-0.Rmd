@@ -5,6 +5,8 @@ date: "6/3/2023"
 output: 
   pdf_document: default
 urlcolor: blue
+editor_options: 
+  chunk_output_type: console
 ---
 
 
@@ -12,12 +14,16 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The short course will provide a quick overview of Bayesian applications in environmental and ecological studies, with examples and code from [Qian et al (2023)](https://github.com/songsqian/BeesRStan/).  I will provide several Rmarkdown files for you to practice.  For best experience, I recommend that you bring your own laptop to the workshop, with R and RStudio installed.  I want to make the workshop informal with time to answer questions when they arise.  I will not use power-point presentation. Instead, I will walk through the Rmarkdown files and explain the materials. For this reason, I would like to ask that you make certain preparations.   All course materials (data, code, references) are available at [Github](https://github.com/songsqian/BeesRStan/), follow the link to [SFS](https://github.com/songsqian/BeesRStan/tree/main/SFS) for Rmd files used in the short course.
+The short course will provide a concise introduction to Bayesian applications in environmental and ecological studies, featuring examples and code from [Qian et al (2023)](https://github.com/songsqian/BeesRStan/). To facilitate practice, I will supply multiple Rmarkdown files. To ensure the best learning experience, it is recommended that you bring your own laptop to the workshop, with R and RStudio already installed. The workshop will have an informal atmosphere, allowing time for questions to be addressed as they arise. Instead of using a traditional PowerPoint presentation, I will guide you through the Rmarkdown files and provide explanations of the materials. Therefore, I kindly request that you make the necessary preparations. You can access all course materials, including data, code, and references, on [Github](https://github.com/songsqian/BeesRStan/), follow the link to [SFS](https://github.com/songsqian/BeesRStan/tree/main/SFS) for the Rmd files used in the short course.
 
 ## Preparing R and RStan
-I recommend that you update your R and RStudio to avoid version-specific issues.  All materials were tested using the most recent version of R (4.3.0, "Already Tomorrow") and RStudio (2023.03.1+446 "Cherry Blossom").  We will use Stan for all Bayesian computation, via R package `rstan`, which requires access to C compiling toolchain. (Windows users, make sure that you also install `Rtools`. The current version is [Rtools43](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html).) Please follow the following instructions from Stan developers to properly install `rstan`:
+To ensure smooth compatibility and avoid version-specific issues, it is strongly recommended that you update both R and RStudio. The materials provided in the course were thoroughly tested with the most recent versions: R version 4.3.0, nicknamed "Already Tomorrow," and RStudio version 2023.03.1+446, called "Cherry Blossom."
 
-- For Windows users using the recent versions of R (4.3 and 4.2), the current version of RStan available from CRAN is not compatible and will return error messages. You need to install the preview of `rstan` 2.26 running the following commends:
+Throughout the course, we will utilize Stan for all Bayesian computations, which can be accessed through the R package 'rstan'. It's important to note that using 'rstan' requires access to a C compiling toolchain. If you are a Windows user, please ensure that you also install 'Rtools'. The current recommended version is [Rtools43](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html).).
+
+For proper installation of 'rstan', please follow the instructions provided by the Stan developers:
+
+- Windows users using recent versions of R (4.3 and 4.2) should be aware that the current version of 'RStan' available from CRAN is not compatible and may result in error messages. To resolve this, you need to install the preview of 'rstan' 2.26 by running the following commands:
 
 ```
 remove.packages(c("StanHeaders", "rstan"))
@@ -27,14 +33,16 @@ install.packages("rstan",
   repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 ```
 
-- For Mac users, please refer to [Stan Github](https://github.com/stan-dev/rstan/wiki/Configuring-C---Toolchain-for-Mac) for details.
+- For Mac users, please refer to [Stan Github](https://github.com/stan-dev/rstan/wiki/Configuring-C---Toolchain-for-Mac) for detailed instructions on configuring the C++ toolchain.
 
 - For Linus users, you are most likely fine. Check [here](https://github.com/stan-dev/rstan/wiki/Configuring-C-Toolchain-for-Linux) just in case.
 
 ## Preparing your laptop
-You should create an empty folder on your laptop for this short course and download all `.Rmd` and `.RData` files from the [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder.  Data files used in the class will be accessed via internet.  If you don't have internet access on site, you need to download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **ahead of time**.  I will bring a copy of all necessary files with me just in case. 
+
+To prepare for the short course, it is recommended that you create an empty folder on your laptop dedicated to this course. Then, download all the `.Rmd` and `.RData` files from the course [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder. During the class, the data files will be accessed through the internet. However, if you anticipate not having internet access on-site, it is crucial that you download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **beforehand**. This ensures you have the necessary files readily available. In case of any unforeseen circumstances, I will also bring a copy of all essential files with me.
 
 ## Your Data Examples
+
 To enhance the workshop's usefulness, I have structured the day into four sessions. Here's a breakdown of each session:
 
 - Introductory Session: We will start with an introductory session that focuses on a simple problem that doesn't necessarily require Bayesian statistics or the computational power of Stan. This session serves as a foundation for understanding key concepts.
@@ -46,4 +54,5 @@ To enhance the workshop's usefulness, I have structured the day into four sessio
 - Participant Data Examples: During the last couple of hours of the day, we will open the floor for discussion and analysis of data examples brought by participants. If you have an example you'd like to share, please send it (\url{song.qian@utoledo.edu}) to me ahead of time (before May 31, US time). I will do my best to include it in the final session and provide insights based on the shared data.
 
 By structuring the day in this manner, we aim to cover various aspects of Bayesian analysis, progressively building knowledge and offering opportunities for practical application.
+
 

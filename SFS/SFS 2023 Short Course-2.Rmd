@@ -3,13 +3,17 @@ title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecol
 author: "Song S. Qian"
 date: "6/3/2023"
 output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-source("FrontMatter.R")
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+source(paste(rootDIR, "FrontMatter.R", sep="/"))
 
-packages(rstan)
+require(rstan)
 packages(rv)
 packages(car)
 rstan_options(auto_write = TRUE)
@@ -19,24 +23,29 @@ nchains <-  min(c(parallel::detectCores(), 8))
 niters <- 5000
 nkeep <- 2500
 nthin <- ceiling((niters/2)*nchains/nkeep)
-
-dataDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R/Data"
+dataDIR <- paste(rootDIR, "Data", sep="/")
 ```
 ## Introductory Examples 
 
-In this session, we learn the use of Bayesian inference with examples often seen in the ecological and environmental literature, where the response variable distribution models are standard distributions covered in statistical textbooks.  We emphasize the flexibility of the Bayesian approach and explore how such models can often be expanded to make them more realistic (compared to how the data were generated). The guiding principle of Bayesian applications in environmental and ecological statistics should be the three criteria of an applied statistical model recommended by Cox (1995):
-- A probability distribution model for the response variable,
-- A parameter vector that defines the distribution model, at least some of the parameters should reflect features of the system under study
-- The inclusion or representation of the data-generating process.
+In this session, we will learn about the use of Bayesian inference with examples commonly encountered in ecological and environmental literature. These examples typically involve response variable distributions that are standard and covered in statistical textbooks. We will emphasize the flexibility of the Bayesian approach and explore how these models can be expanded to increase their realism compared to the data generation process.
 
-The last criterion (data generating process) is most important as we want to model we developed to be relevant to the problem at hand.  In other words, we want to model to reflect the likely causal relationship, rather than simply correlation.  Furthermore, environmental and ecological data are often observational. That is, we collect the data without knowing what would be the proper model (method) to analyzed them.  Statistics we learned from graduate school is mostly based on the assumption that we know the right model. We teach statistics chapter by chapter, each time assuming that we know the right model. When we actually know what assumptions we want to test, we design experiments to isolate the main factor of interest and using randomization to neutralize other factors that may also affect the response variable (confounding factors). When we are working on data from typical environmental and ecological monitoring programs, we often started collecting data without knowing what questions we want to answer. For example, most data we used for studying the effects of climate change. In my opinion, analyzing environmental/ecological data often starts with identifying what is the problem to be answered. As all models are wrong (and some are useful), we are interested in identifying how and when a wrong model is useful.
+The guiding principle for Bayesian applications in environmental and ecological statistics should adhere to the three criteria of an applied statistical model recommended by Cox (1995):
 
-I find the following process is effective in analyzing environmental/ecological data:
-- Starting from existing (simple) models that can be directly implemented in R. 
-- Explore the model fit and identify its weakness, using the "posterior simulation" concept -- use the fitted model to predict what we want to learn and what we already know. 
-- Based on the identified weakness, reformulate the model to redress the weakness.
-- Implement the model in Stan to further identify problems, such as computational stability and identifiability (e.g., the snake fungal disease example with unknown error rates).
-- Repeat the posterior simulation to identify where and when the model is useful.
+1. A probability distribution model for the response variable.
+1. A parameter vector that defines the distribution model, where some parameters reflect features of the system under study.
+1. The inclusion or representation of the data-generating process.
+
+Of these criteria, the last one, the data-generating process, holds significant importance. Our aim is to develop models that are relevant to the problem at hand and reflect likely causal relationships rather than mere correlations. Furthermore, environmental and ecological data are often observational, meaning we collect the data without prior knowledge of the appropriate model or method for analysis. The statistics we learned in graduate school typically assume that we already know the correct model. We teach statistics chapter by chapter, assuming that we have the right model in mind. However, when working with data from environmental and ecological monitoring programs, we often start collecting data without a clear idea of the questions we want to answer. For instance, most of the data used in studying the effects of climate change are collected without specific hypotheses in mind. In my opinion, analyzing environmental/ecological data often begins with identifying the problem to be addressed. Since all models are inherently wrong (yet some are useful), our focus lies in determining how and when a flawed model can still be useful.
+
+I have found the following process to be effective in analyzing environmental/ecological data:
+
+1. Start with existing (simple) models that can be readily implemented in R.
+1. Explore the model fit and identify its weaknesses using the concept of "posterior simulation." This involves using the fitted model to predict what we want to learn and compare it with what we already know.
+1. Based on the identified weaknesses, reformulate the model to address those shortcomings.
+1. Implement the model in Stan to further assess problems such as computational stability and identifiability (e.g., the snake fungal disease example with unknown error rates).
+1. Repeat the posterior simulation to determine where and when the model is useful.
+
+By following this iterative process, we can refine our models, understand their limitations, and identify their utility in analyzing environmental and ecological data.
 
 ### Example 1 -- The Effect of Gulf of Mexico Hypoxia on Benthic Communities
 Section 4.2.2, Qian et al (2022).
@@ -206,15 +215,15 @@ plot(abun_stan$mu_hyp, log(abun_stan$sigma_hyp), cex=0.5,
      xlab="$\\mu_{hyp}$", ylab="$\\log(\\sigma_{hyp})$")
 text(3,-3, "Abundance")
 ```
-What we encountered is the famous Neal's funnel, indicating the lack of information to properly quantify both $\mu_{hyp}$ and $\sigma^2_{hyp}$ together.  This feature often leads to highly correlated $\theta_k$. We need informative prior on one of the two parameters. In this case, I used a strong prior for $\sigma^2_{hyp}$ (a half normal N(0,1)). When using a noninformative prior, the program runs very slowly. Computationally, we can avoid the computational difficulties by reparameterizing $\theta_k$. Instead of modeling it as a normal random variable with parameters $\mu_{hyp}$ and $\sigma_{hyp}^2$, we introduce a new parameter $z_k \sim N(0,1)$ and model $\theta_k$ as a transformed variable: $\theta_k = \mu_{hyp} + \sigma_{hyp} z_k$.  As a result, we no longer directly sample $\theta_k$. It is an effective way to reduce the number of divergent transitions. But the model stays the same and the Neal's funnel remains.
+An issue we encountered in this analysis is the presence of Neal's funnel, indicating a lack of information to adequately quantify both $\mu_{hyp}$ and $\sigma_{hyp}^2$ simultaneously. This often results in highly correlated $\theta_k$ values. To address this, we require an informative prior for one of the two parameters. In this case, a strong prior was used for $\sigma_{hyp}^2$, specifically a half-normal distribution N(0,1). When using a noninformative prior, the computational performance of the program is significantly slower. To mitigate computational difficulties, we can reparameterize $\theta_k$. Instead of directly modeling it as a normal random variable with parameters $\mu_{hyp}$ and $\sigma_{hyp}^2$, we introduce a new parameter $z_k \sim N(0,1)$ and model $\theta_k$ as a transformed variable: $\theta_k = \mu_{hyp} + \sigma_{hyp} z_k$. Consequently, we no longer directly sample $\theta_k$, which effectively reduces the occurrence of divergent transitions. However, the underlying model remains the same, and the presence of Neal's funnel persists.
 
-The computational issues of this model made us to look at this problem more.  We realized that the data we have do not have enough information to simultaneously quantify $\theta_k$, $\mu_{hyp}$, and $\sigma_{hyp}^2$, largely due to the large within zone (among core) variation.  The multilevel model suggested that including zone as a random effect is not effective in explaining the total variance.  As such, we proposed two alternative models without directly parameterizing the among zone variation.  
+The computational challenges encountered during this analysis prompted us to investigate the problem further. We realized that the available data do not provide sufficient information to simultaneously quantify $\theta_k$, $\mu_{hyp}$, and $\sigma_{hyp}^2$, primarily due to the substantial within-zone variation among the cores. The multilevel model indicated that including zone as a random effect does not effectively explain the overall variance. As a result, we proposed two alternative models that avoid directly parameterizing the among-zone variation.
 
-In the first alternative we removed zone as a hierarchy and model the core means as exchangeable:
+In the first alternative, we removed the zone as a hierarchical factor and treated the core means as exchangeable:
 $$
 \mu_{jk} \sim N(\mu_{hyp}, \sigma^2_{hyp})
 $$
-We then estimate each zone mean as the average of the means of cores inside the respective zone. The response variable is standardized to allow the use of relatively constrained priors for variance parameters (e.g., half normal N(0,0.5)).
+We estimated each zone mean as the average of the means of the cores within that zone. To accommodate relatively constrained priors for variance parameters (e.g., half-normal N(0,0.5)), the response variable was standardized.
 ```{R}
 ###
 ### First alternative (One-way ANOVA)
@@ -531,7 +540,6 @@ abline(v=0)
 mlplot(delta2A, xlab="Alternative model 2", axes=F, xlim=c(-2,1.5))
 axis(1)
 abline(v=0)
-dev.off()
 
 par(mfrow=c(1,3), mar=c(3,3,2,1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
 mlplot(delta0R, xlab="Original model", top.axis=F, xlim=c(-1.5,0.5))
@@ -548,11 +556,11 @@ abline(v=0)
 ### Example 2 -- Zero-Inflation or Not?
 In this example, we introduce the concept of Bayesian posterior simulation for model evaluation.
 
-Incidental Catch in Fisheries (Hilborn and Mangel, 1997. *Ecological Detective*) -- determine the minimum sample size of "statistically meaningful data," data that will result in an estimate of the mean by-catch rate with a limited level of uncertainty.  The original study (Bartle 1991) used the Central-Limit-Theorem-based confidence interval to define the acceptable level of uncertainty.  As a result, the goal is to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) used the negative binomial distribution to describe the bycatch data.  The response variable is the bycatch count, a count variable taking only non-negative integer values.
+Incidental Catch in Fisheries (Hilborn and Mangel, 1997. *Ecological Detective*) aimed to determine the minimum sample size of "statistically meaningful data" required to estimate the mean bycatch rate with a limited level of uncertainty. The original study (Bartle, 1991) used Central Limit Theorem-based confidence intervals to define an acceptable level of uncertainty. The goal was to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) utilized the negative binomial distribution to describe the bycatch data, where the response variable is the bycatch count, a count variable taking only non-negative integer values.
 
-The Poisson distribution is, perhaps, the most commonly used probability distribution for count data. Fisher et al (1943) suggested that Poisson is one of three types of distribution for biological measurements.  
+The Poisson distribution is perhaps the most commonly used probability distribution for count data. Fisher et al. (1943) suggested that the Poisson distribution is one of three types of distributions for biological measurements.
 
-The Poisson distribution has one parameter ($\lambda$), representing the mean. The probability function is 
+The Poisson distribution has one parameter ($\lambda$), representing the mean. The probability function is given by
 $$
 \pi(Y=k) = \frac{\lambda^ke^{-\lambda}}{k!}
 $$
@@ -560,7 +568,7 @@ When observing independent observations $y_1,\cdots,y_n$, the log-likelihood fun
 $$
 LL = \log\left (\prod_{i=1}^n\frac{\lambda^ke^{-\lambda}}{k!}\right )\propto \log(\lambda)\sum_{i=1}^ny_i - n\lambda
 $$
-In a Bayesian statistics, we normally use the gamma distribution as the prior of $\lambda$, because the posterior distribution of $\lambda$ is also a gamma distribution. If the prior is $\lambda\sim gamma(\alpha, \beta)$, the posterior is $\lambda \mid y_1,\cdots,y_n \sim gamma(\alpha+\sum_{i=1}^y, \beta+n)$.  The gamma distribution is the same as the $\chi^2$ distribution, which Fisher et al (1943) used to derive the negative binomial distribution. 
+In a Bayesian statistics, we normally use the gamma distribution as the prior for $\lambda$, because the posterior distribution of $\lambda$ is also a gamma distribution. If the prior is $\lambda\sim \text{gamma}(\alpha, \beta)$, the posterior is $\lambda \mid y_1,\cdots,y_n \sim \text{gamma}(\alpha+\sum_{i=1}^y, \beta+n)$.  The gamma distribution is the same as the $\chi^2$ distribution, which Fisher et al (1943) used to derive the negative binomial distribution. 
 
 We fit the bycatch data using both Poisson and binomial distributions to show why the negative binomial model is more useful.
 
@@ -669,7 +677,7 @@ mlplot(means, xlab="Estimated mean by-catch per tow")
 
 ```
 Posterior simulation -- using the fitted model to replicate the data repeatedly
-```{R}
+```{R,fig.height=4.5, fig.width=4.5}
 ## simulations
 nsims <- length(Pois_stanout$lambda)
 n <- length(zippos)+zip0
@@ -682,6 +690,11 @@ for (i in 1:nsims){
     mu_pois <- c(mu_pois, mean(tmp))
     sig_pois <- c(sig_pois, sd(tmp))
 }
+### here is why I like `rv`
+tmp <- rvpois(1, Pois_stanout$lambda)
+hist(summary((tmp==0))$mean)
+hist(summary(tmp)$mean)
+hist(summary(tmp)$sd)
 
 ### negative Bin:
 n0_NB <- mu_NB <- sig_NB <- NULL
@@ -691,6 +704,12 @@ for (i in 1:nsims){
     mu_NB <- c(mu_NB, mean(tmp))
     sig_NB <- c(sig_NB, sd(tmp))
 }
+## or use rv (generating from gamma-poisson conjugate):
+tmp1 <- rvgamma(1, NB_stanout$r, NB_stanout$r/NB_stanout$mu)
+tmp <- rvpois(1, tmp1)
+hist(summary(tmp==0)$mean)
+hist(summary(tmp)$mean)
+hist(summary(tmp)$sd)
 
 par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
 hist(n0_pois, xlim=range(c(n0_pois, n0_NB, zip0/n)),
@@ -709,7 +728,7 @@ abline(v=mean(c(rep(0,zip0),zippos)))
 hist(sig_pois,
      xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
      xlab="standard deviation", ylab="", main="",yaxt="n",
-     border="white", density=-1, col="gray")
+     border="white", density=-1)
 abline(v=sd(c(rep(0,zip0),zippos)))
 
 hist(n0_NB, xlim=range(c(n0_pois, n0_NB,zip0/n)),yaxt="n",
@@ -731,10 +750,12 @@ The Poisson model cannot replicate the variance and the fraction of zeros of the
 
 **Zero-Inflated** count data models
 
-A zero-inflated model is a mixture model. Under certain conditions, the observations are always 0 (true zero). For example, there were no sea birds present.  Without knowing the conditions, we must treat observed 0s as a combination of true zeros and 0s resulted from, for example, the imperfect sampling method (i.e., bycatch happened but failed to observe).  Assuming that the chance of sampling a true 0 is $\theta$ (and a probability of $1-\theta$ sampling a Poisson counts).  The probability of observing any outcome $y_i$ is then,
+The zero-inflated model is designed to handle count data that exhibits excess zeros. Under certain conditions, the observations are always 0 (true zero). For example, there were no sea birds present.  Without knowing the conditions, we must treat observed 0s as a combination of true zeros and 0s resulted from, for example, the imperfect sampling method (i.e., bycatch happened but failed to observe).  Assuming that the chance of sampling a true 0 is $\theta$ (and a probability of $1-\theta$ sampling a Poisson counts).  The probability of observing any outcome $y_i$ is defined as follows:
+- The probability of observing 0 is given by $\pi(y_i) = \theta + (1-\theta) \cdot Pois(0|\lambda)$, where $Pois(0|\lambda)$ represents the probability of observing a zero count in a Poisson distribution with mean $\lambda$.
+- The probability of observing $y_i>0$ is given by $\pi(y_i) = (1-\theta) \cdot Pois(y_i|\lambda)$, representing the probability of observing a non-zero count in the Poisson distribution.
 $$
-\pi(y_i) = \begin{cases}\theta+(1-\theta)Pois(0\mid \theta) & \mathrm{if}\ y_i=0\\
-(1-\theta)Pois(y_i\mid \lambda) & \mathrm{if}\ y_l > 0.\end{cases}
+\pi(y_i) = \begin{cases}\theta+(1-\theta)Pois(0\mid \lambda) & \mathrm{if}\ y_i=0\\
+(1-\theta)Pois(y_i\mid \lambda) & \mathrm{if}\ y_i > 0.\end{cases}
 $$
 The likelihood function is 
 $$
@@ -747,10 +768,21 @@ $$
 Writing the log-likelihood in Stan:
 ```
 model{
-  target += n0*log_sum_exp(log(theta), log1m(theta-\lambda));
+  target += n0*log_sum_exp(log(theta), log1m(theta)-\lambda);
   target += np*log1m(theta) + poisson_lpmf(yp| lambda);
 }
 ```
+Because $\log(\theta)$ is the log of probability of observing a true 0, we can also directly use the Stan function `bernoulli_logit_lpmf` to write the code:
+```
+model{
+  target += n0*log_sum_exp(bernoulli_logit_lpmf(1|zi),
+bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
+  target += np*bernoulli_logit_lpmf(0|zi) +
+            poisson_log_lpmf(yp | eta);
+}
+```
+where `zi` is the logit of the probability of a true zero ($z_i=\text{logit}(\theta)$) and `eta` is the log of the Poisson parameter ($\eta = \log(\lambda)$).
+
 Lambert (1992) introduced a generalized linear model for zero-inflated Poisson process. In the model, the Poisson model parameter $\lambda$ and the binomial model parameter $\theta$ are modeled as linear functions of predictors through the respective link function:
 $$
 \begin{array}{rcl}
@@ -758,6 +790,8 @@ $$
 \mathrm{logit}(\theta) & = & \mathbf{Z\alpha}
 \end{array}
 $$
+The R package `pscl` implements the MLE of the Lambert ZIP model. 
+
 Fitting the models:
 ```{R}
 zip_bycatch <-"
@@ -780,7 +814,7 @@ model{
   theta ~ beta(1,1);
   lambda ~ normal(0,5);
   target += n0*log_sum_exp(bernoulli_logit_lpmf(1|zi),
-                           bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
+bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
   target += np*bernoulli_logit_lpmf(0|zi) +
             poisson_log_lpmf(yp | eta);
 }
@@ -825,8 +859,8 @@ Processing data and initial values
 ## The data and initial values
 ##############################################
 ZI_bycatch <- function(yp=zippos, n0=zip0, model="zip", n.chains=nchains){
-    N <- length(yp)+n0
     np <- length(yp)
+    N <- np+n0
     data <- list(np=np, n0=n0, yp=yp)
     inits <- list()
     for (i in 1:n.chains){
@@ -903,7 +937,6 @@ for (i in 1:dim(zip_coef)[1]){
 }
 
 par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
-
 hist(n0_zinb, xlim=range(c(n0_zinb, zip0/n, n0_zip)), yaxt="n",
      xlab="fraction of zeros", ylab="ZINB", main="",
      border="white", col="gray", density=-1)
@@ -938,9 +971,27 @@ abline(v=s)
 
 
 ### Example 3 --- Grass Carp Population Estimation
-Grass carp, a popular aquaculture species in Asia and an invasive nuisance species in the Great Lakes region. Once grass carp reproduction in Sandusky River, a Lake Erie tributary was confirmed in 2016, a regional task force was established to develop control methods. One approach was to physically remove these fish using electrofishing method.  Using capture data from Sandusky River, we developed a crude mode for estimating grass carp population in the area.  This example illustrates how to use Bayesian approach to systematically improve an imperfect (or wrong) model to produce useful information.
+- Statistical method -- Data augmentation
 
-The objective of estimating grass carp population is to evaluate the effectiveness of the removal effort.  We faced several difficulties in obtaining statistically "meaningful" data.  First, grass carp is still rare in the region. Although more than 100 fish were removed every year from Sandusky River, the vast majority of sampling trips failed to capture grass carp. When successful, the number of captures is low, mostly 1, rarely 2, and only one time 3. Even with a properly designed (random) sampling plan, we do not have existing statistical model for this kind of data.  
+In many cases, describing the response variable model can be highly difficult, as the posterior distribution is often challenging to express using simple distribution models. However, this difficulty can often be overcome by incorporating data from unobservable variable(s). In such situations, a class of statistical methods known as data augmentation methods is commonly employed.
+
+Let's assume that the posterior distribution $\pi(\theta\mid y)$ is not easily manageable. However, we discover that the posterior distribution of $\theta$ conditional on another variable $z$ ($\pi(\theta\mid z, y)$) is more amenable to analysis. By utilizing the conditional probability equation, we can express the joint posterior distribution of $\theta$ and $z$ as follows:
+$$
+\pi(\theta, z\mid y) = \pi(\theta\mid z, y)\pi(z\mid y)
+$$
+From this joint posterior, we can derive the marginal distribution of $\theta$ by integrating out the variable $z$:
+$$
+\pi(\theta\mid y) = \int_z \pi(\theta\mid z, y)\pi(z\mid y)dz
+$$
+
+The unobservable variable $z$ is commonly referred to as a latent variable. An example where this approach is applicable is in the modeling of grass carp populations.
+
+
+- Background
+Grass carp, a popular aquaculture species in Asia and an invasive nuisance species in the Great Lakes region, has been causing concerns since its reproduction in the Sandusky River, a Lake Erie tributary, was confirmed in 2016. To address this issue, a regional task force was established to develop control methods. One approach implemented was the use of electrofishing to physically remove the fish. To estimate the grass carp population in the area, we utilized capture data from the Sandusky River and developed a basic model. This example demonstrates how a Bayesian approach can be employed to systematically improve an imperfect or flawed model to generate valuable information.
+
+The primary objective of estimating the grass carp population is to assess the effectiveness of the removal efforts. However, we encountered several challenges in obtaining statistically meaningful data. Firstly, grass carp remains relatively scarce in the region. Despite removing over 100 fish annually from the Sandusky River, the majority of sampling trips failed to capture any grass carp. When successful, the number of captures was generally low, typically ranging from 1 to occasionally 2, with a single instance of 3 captures. Even with a well-designed random sampling plan, we do not possess an existing statistical model suitable for analyzing this type of data.
+  
 ```{R}
 ## Importing data
 ### initial data set used in Gouveia et al (2023)
@@ -1029,43 +1080,48 @@ gc_data5$Rdate <- as.Date(paste(gc_data5$month,
                                 gc_data5$year, sep="-"),
                           format = "%m-%d-%Y")
 gc_data5$Season <- season(gc_data5$month)
-
 ```
-The initial model was based on the N-mixture model because the response variable data (number of captures) are generated through two separate processes:
-1. Fish movement resulting in an unknown number of individuals present at the sampling site, and
-2. The imperfect data collection method (electrofishing).
+The initial model adopted for estimating the grass carp population was based on the N-mixture model. This model was chosen because the data for the response variable (number of captures) were generated through two distinct processes:
+1. Fish movement, which resulted in an unknown number of individuals being present at the sampling site.
+2. The data collection method (electrofishing), which was imperfect.
 
-The N-mixture model explicitly models the two processes using a latent variable method.  Assuming there are $N$ individuals at the sampling site when electrofishing statred, the number of captures is a binomial random variable:
+To account for these processes, the N-mixture model employs a latent variable approach. Assuming that there are $N$ individuals present at the sampling site when electrofishing begins, the number of captures follows a binomial distribution:
 $$
 y_i \mid N_i\sim Bin(p, N_i)
 $$
-where $p$ is the "detection" probability, the probability of capturing a fish when it is present.  The unknown number $N$ is a modeled as a Poisson random variable:
+where $p$ is the "detection" probability, the probability of capturing a fish when it is present.  The unknown number $N$ is modeled as a Poisson random variable:
 $$
 N_i \sim Pois(\lambda_i)
 $$
-Because the sampling site is limited in size, we can define $\lambda_i$ as the expected number of individuals in the location. For a river, we define the population size in terms of population density ($\lambda$) measured in number of fish per kilometer. Hence, $\lambda_i = d_i\lambda$ where $d_i$ is the linear sampling distance along the river during the $i$th sampling event. The typical statistical solution to this mixture model problem is to fisrt write out the joint distribution of $y_i, p, N_i$, and $\lambda$:
+Because the sampling site is limited in size, we can define $\lambda_i$ as the expected number of individuals in the location. For a river, we define the population size in terms of population density ($\lambda$) measured in number of fish per kilometer. Hence, $\lambda_i = d_i\lambda$ where $d_i$ is the linear sampling distance along the river during the $i$th sampling event. 
+
+In the context of this mixture model problem, the standard statistical approach is to establish the joint distribution of $y_i$, $p$, $N_i$, and $\lambda$ as follows:
 $$
 \Pr(Y=y_i, p, N_i, \lambda) = \Pr(Y=y_i\mid p, N_i)\Pr(N_i\mid\lambda)\Pr(\lambda)\Pr(p)
 $$
-Because $N_i$ is an unknown (latent) variable, we integrate $N_i$ out to obtain the marginal posterior density of $p, \lambda$. 
+Since $N_i$ is an unknown (latent) variable, we integrate it out to derive the marginal posterior density of $p$ and $\lambda$:
 $$
 \Pr(p, \lambda\mid y_i) = \int \Pr(Y=y_i\mid p, N_i)\Pr(N_i\mid\lambda)\Pr(\lambda)\Pr(p)dN_i
 $$
 As $N_i$ is an integer, the integral is now a summation:
 $$
-\Pr(p, \lambda\mid y_i) = \sum_{n=N_i}^\infty \Pr(Y=y_i\mid p, n)\Pr(n\mid\lambda)\Pr(\lambda)\Pr(p)
+\Pr(p, \lambda\mid y_i) = \sum_{n=y_i}^\infty \Pr(Y=y_i\mid p, n)\Pr(n\mid\lambda)\Pr(\lambda)\Pr(p)
 $$
-The first term in the summation is a binomial probability function, the second term is a Poisson probability function, the the last two terms are priors of $\lambda$ and $p$.  
+In this equation, the first term in the summation represents a binomial probability function, the second term corresponds to a Poisson probability function, and the last two terms are the priors for $\lambda$ and $p$, respectively. By evaluating this summation, we can obtain the marginal posterior density of $p$ and $\lambda$ given the observed data $y_i$.
 
-First, we do not expect the observed response variable data have information for both $p$p and $\lambda$. $p$ is associated with the sampling method, while $\lambda$ is a characteristics of the target population. As a result, a meaningful prior distribution of $p$ should be quantified separately. Second, although the summation operation is relatively simple for a computer, the infinite upper bound is impossible computationally.  Realistically, we do not expect there would be more than 50 fish in the sampling site (roughly 200-500 meters river segment). We can use 50 or 25 as a reasonable upper bound. The log-likelihood is:
+First, it is important to note that the observed response variable data do not typically provide information about both $p$ and $\lambda$. The parameter $p$ is associated with the sampling method, while $\lambda$ represents a characteristic of the target population. Therefore, it is appropriate to specify a meaningful prior distribution for $p$ separately.
+
+Secondly, the infinite upper bound in the summation is not computationally feasible. Realistically, it is highly unlikely to have more than 50 fish in the sampling site, which corresponds to a river segment of roughly 200-500 meters. Therefore, we can use 50 or 25 as reasonable upper bounds.
+
+The log-likelihood function can be expressed as:
 $$
-LL = \log\left (\sum_{i-N_i}^{n_{max}} \Pr(Y=y_i\mid p, n)\times\Pr(n\mid\lambda)\right )
+LL = \log\left (\sum_{y_i}^{n_{max}} \Pr(Y=y_i\mid p, n)\times\Pr(n\mid\lambda)\right )
 $$
 Because
 $$
 \Pr(Y=y_i\mid p, n)\times\Pr(n\mid\lambda) = e^{\log(\Pr(Y=y_i\mid p, n))+ \log(\Pr(n\mid\lambda))}
 $$
-we can use the efficient computation function `log_sum_exp` to write the log-likelihood function
+we can use an efficient computation function such as `log_sum_exp` to write the log-likelihood function
 ```
 model{
   int k;
@@ -1081,7 +1137,11 @@ model{
   }
 }
 ```
-This model is obviously wrong because the fish density along the river cannot be a constant. We initially divided the river into 4 segments and assumed constant density within a segment.  It is "less wrong."  When the model was implemented with four river segments, the parameter $\lambda$ is indexed by segments (i.e., $\lambda_j$, where $j$ is the segment). We assume that $\lambda_j$'s are exchangeable. That is, they are different but we do not know a priori how they differ from each other. As such, a natural Bayesian approach is to impose a single prior distribution for $\lambda_j$. Specifically, we assume $\log(\lambda_j)\sim N(\mu, \tau^2)$, where the common prior distribution ($N(\mu,\tau^2)$) is known as the hyper-distribution and its parameters ($\mu$ and $\tau^2$) hyper parameters. We used log-transformed $\lambda_j$ because it is the parameter of a Poisson distribution. Likewise, when the model was implemented for three years, the parameter $\lambda$ is indexed by year, and the three year-specific densities are assumed exchangeable. It has long been established in statistics literature (e.g., Efron and Morris 1977), that the hierarchical modeling estimated segment- and year-specific parameters (i.e., $\lambda_j$) are more accurate than the estimated parameters using data from individual units separately. Only recently, the hierarchical modeling approach has been introduced to ecologists (REFs).  
+It is evident that the initial model assumption of constant fish density along the river is incorrect. To address this, we divided the river into four segments and assumed a constant density within each segment. While this assumption is still an approximation, it is considered "less wrong" given the available information.
+
+In the implementation of the model with four river segments, the parameter $\lambda$ is indexed by segments ($\lambda_j$, where $j$ denotes the segment). We assume that the $\lambda_j$ values are exchangeable, meaning they are different from each other, but we do not have prior knowledge about their specific differences. A natural Bayesian approach is to assign a single prior distribution for $\lambda_j$. Specifically, we assume $\log(\lambda_j)\sim N(\mu, \tau^2)$, where the common prior distribution $N(\mu,\tau^2)$ is referred to as the hyper-distribution, with hyperparameters $\mu$ and $\tau^2$. The use of the log-transformed $\lambda_j$ is due to it being the parameter of a Poisson distribution.
+
+Similarly, when the model is implemented for multiple years, the parameter $\lambda$ can be indexed by year, and the year-specific densities are assumed to be exchangeable. It is well-established in the statistics literature (e.g., Efron and Morris, 1977) that hierarchical modeling, which estimates segment- and year-specific parameters ($\lambda_j$), yields more accurate results compared to estimating parameters using data from individual units separately. While hierarchical modeling has been widely applied in various fields, its introduction to ecologists has been relatively recent.
 
 The full N-mixture model is :
 ```{R}
@@ -1135,7 +1195,7 @@ bet <- 78.77657
 ```
 The model is very slow. 
 ```{R}
-####N-mixture model--do not run time comsuming
+####N-mixture model--do not run time consuming
 
 stan_in1 <- function(data=gc_data, a=alp, b=bet,
                      f=0.127/2, chains=nchains,
@@ -1169,16 +1229,46 @@ input.to.stan <- stan_in1(Nmax=25)
 #print(fit2keep)
 
 ```
-Because the non-zero count values are mostly 1, there is not much information to quantify the Poisson model parameter. A simplified model in Qian et al (2022) transformed the count variable into a binary (captured or not captured) variable.  For the electronic fishing process, the capture of grass carp is a Bernoulli random variable:
-
+Since the majority of non-zero count values in the data are 1, there is limited information available to estimate the parameter of the Poisson model accurately. To address this issue, a simplified model proposed by Qian et al. (2022) transformed the count variable into a binary variable indicating whether a fish was captured or not. Specifically, for the electrofishing process, the capture of a grass carp can be modeled as a Bernoulli random variable:
 $$
 y_i \sim Bern(p_d\theta)
 $$
-where $y_i$ is the either 1 (capture) or 0 (no capture), $p_d$ is the electronic fishing detection probability, $\theta_i$ is the probability of at least one grass carp was present, and $Bern$ represents the Bernoulli distribution. The number of grass carp present in the sampling site ($N_i$) can be modeled as a Poisson random variable with a mean to be a product of the average fish density $\lambda$ (in number of fish per kilometer) and the size of the sampling site $f$ (in kilometers). That is $N_i \sim Pois(\lambda f)$, from which, we have the probability of at least one grass carp present:
+where $y_i$ represents the binary outcome indicating either a capture (1) or no capture (0). The detection probability of electronic fishing, denoted as $p_d$, represents the probability of detecting a fish if it is present. The parameter $\theta_i$ corresponds to the probability of at least one grass carp being present at the sampling site.
+
+The number of grass carp present in the sampling site, $N_i$, can be modeled as a Poisson random variable with the mean equal to the product of the average fish density $\lambda$ (measured in the number of fish per kilometer) and the size of the sampling site $d$ (measured in kilometers). Therefore, we have $N_i \sim \text{Pois}(\lambda d)$. From this, we can derive the probability of at least one grass carp being present:
 $$
-\theta = 1-e^{-\lambda f}
+\theta = 1-e^{-\lambda d}
 $$
 The detection probability $p_d$ was estimated based on an independent depletion study. 
+
+Using a latent variable method, we can use $z_i$ to represent where at least one fish was present ($z_i=1$) or not ($z_i=0$). The likelihood function is the probability of observing a specific $y_i$. The joint probability of $y_i$ and $z-i$ is
+$$
+\pi(y_i, z_i\mid \lambda, p_d) = \pi(y_i\mid z_i, p_d)\pi(z_i\mid \lambda).
+$$
+Here, 
+$$
+\pi(y_i\mid z_i,p_d)=\begin{cases}
+p_d & \text{if}\ z_i=1\\
+0 & \text{if}\ z_i=0 \end{cases}
+$$
+and
+$$
+\pi(z_i\mid \lambda)=\begin{cases}
+1-e^{-\lambda d} & \text{if}\ z_i=1\\
+e^{-\lambda d} & \text{if}\ z_i=0\end{cases}.
+$$
+Because the latent variable is binary, the marginalization is
+$$
+\begin{array}{rl}
+\pi(y_i\mid \lambda, p_d) =& \pi(y_i, z_i=1\mid \lambda, p_d)+\pi(y_i, z_i=0\mid \lambda, p_d)\\
+  = & \pi(y_i\mid z_i=0, p_d)\pi(z_i=0\mid \lambda)+\\
+  & \pi(y_i\mid z_i=1, p_d)\pi(z_i=1\mid \lambda)\\
+  =& \begin{cases}
+  0\times e^{-\lambda d_i} + p_d\times (1-e^{-\lambda d_i}) & \text{if}\ y_i=1\\
+  1\times e^{-\lambda d_i} + (1-p_d)(1-e^{-\lambda d_i}) & \text{if}\ y_i=0
+  \end{cases}
+ \end{array}.
+$$
 ```{R}
 ### Binary formulation--do not run
 carp_BernBern <- "
@@ -1272,23 +1362,22 @@ mlplot((Mixture_coef), xlim=c(-3,5), xlab="log density (fish/km)", cex=0.5)
 
 ```
 
-This model satisfies Cox's three criteria of an applied statistical model. The response variable model is the Bernoulli distribution, the parameter $p_d$ describes the effectiveness of the sampling method and the parameter $\lambda$ is the parameter of interest describing the average fish density from which we can derive estimate of fish population. Although the division of the river segments were selected based on data availability (not ecological considerations), we can use this model to evaluate temporal trend of the population through annual sequential updating. The concept of updating upon new data is uniquely Bayesian. We treat the posterior distribution of model parameters at one time to be the priors for the next time step.  Because the grass carp population is under systematic removal pressure, we have to assume that the population changes every year. When we have multiple years of data, we often use a Bayesian hierarchical model to reflect such uncertainty -- annual populations are different but we are uncertain how they differ.  The hierarchical model can be summarized as a hyper-distribution of segment-specific densities. That is:
+The proposed model satisfies Cox's three criteria for an applied statistical model. The response variable is modeled using the Bernoulli distribution, with the parameter $p_d$ representing the effectiveness of the sampling method, and the parameter $\lambda$ describing the average fish density, which is of primary interest for estimating the fish population. The division of the river segments, although based on data availability rather than ecological considerations, allows for the evaluation of temporal population trends through sequential updating.
 
-$$
-\log(\lambda_j) \sim N(\mu_\lambda, \tau_\lambda^2)
-$$
-where the $\lambda_j$ is the parameter representing the mean population density in segment $j$. The hyper-parameter $\mu_\lambda$ is the log-mean of segment means and the hyper-parameter $\tau_\lambda^2$ is the among segment variance. In order to represent the changes of population over time, we can divide the data into segment ($j$) and year ($t$) and write the model for each year:
+The concept of updating upon new data is a fundamental aspect of Bayesian analysis. In this case, we treat the posterior distribution of model parameters at one time as the priors for the next time step. Given the systematic removal pressure on the grass carp population, it is necessary to assume that the population changes every year. When multiple years of data are available, a Bayesian hierarchical model can effectively capture the uncertainty associated with annual population differences.
+
+The hierarchical model is structured as a hyper-distribution of segment-specific densities. Specifically, we assume that the logarithm of the segment means, $\log(\lambda_j)$, follows a normal distribution with mean $\mu_\lambda$ and variance $\tau_\lambda^2$. The hyper-parameter $\mu_\lambda$ represents the log-mean of segment means, while $\tau_\lambda^2$ represents the among-segment variance. To account for temporal changes in population, the model is extended to incorporate the division of data into segments ($j$) and years ($t$):The hierarchical model can be summarized as a hyper-distribution of segment-specific densities. That is:
 
 $$
 \log(\lambda_{jt})  \sim  N(\mu_{\lambda,t}, \tau^2_{\lambda, t})
 $$
-As we don't have information about how the hyper-parameters vary by year, we can use a second layer of hierarchical model:
-
+To reflect our uncertainty about how the hyper-parameters vary by year, we introduce a second layer of hierarchical modeling:
 $$
 \left (\mu_{\lambda,t}, \tau^2_{\lambda, t}\right) \sim \text{Normal-Iverse-Gamma}(\mu_0, n_0, \alpha, \beta)
 $$
+Here, we impose a common prior for the annual hyper-parameters $\mu_{\lambda,t}$ and $\tau_{\lambda,t}^2$ using the normal-inverse-gamma distribution, which is a conjugate family of priors. In a Bayesian hierarchical model, vague or flat priors are typically used for the hyper-parameters, and the available data (in this case, multiple years of data) is used to estimate the parameters.
 
-That is, we impose a common prior for the annual hyper-parameters $\mu_{\lambda,t}, \tau^2_{\lambda, t}$. The common prior is the normal-inverse-gamma distribution, the conjugate family of priors. In a Bayesian hierarchical model, we impose vague (or flat) priors for the hyper-parameters and use data (here multiple years of data) to estimate the parameters. Qian et al (2022) proposed to sequentially update a hierarchical model without waiting to have data from multiple years. Specifically, we use estimated hyper-parameters based on available data to estimate their prior parameters (i.e., $\mu_0, n_0, \alpha, \beta$) and with data from each additional year, we directly apply the Bayesian estimator (i.e., $\log(\lambda_{jt})\sim N(\mu_{\lambda,t}, \nu_{\lambda,t}^2)$) and update the hyper-parameters to derive the prior parameters for the next year.
+Qian et al. (2022) proposed a sequential updating approach for hierarchical models, eliminating the need to wait for data from multiple years. The estimated hyper-parameters based on the available data are used to estimate the prior parameters (i.e., $\mu_0, n_0, \alpha, \beta$), and with data from each additional year, the Bayesian estimator is applied directly (i.e., $\log(\lambda_{jt}) \sim N(\mu_{\lambda,t}, \nu_{\lambda,t}^2)$), updating the hyper-parameters and deriving the prior parameters for the next year.
 
 ```{R}
 ### Sequential updating
