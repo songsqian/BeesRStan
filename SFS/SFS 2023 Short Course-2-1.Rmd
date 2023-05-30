@@ -1,0 +1,581 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+
+packages<-function(x, repos="http://cran.r-project.org", ...){
+  x<-as.character(match.call()[[2]])
+  if (!require(x,character.only=TRUE)){
+    install.packages(pkgs=x, repos=repos, ...)
+    require(x,character.only=TRUE)
+  }
+}
+
+source(paste(rootDIR, "BeesRStan.R", sep="/"))
+
+require(rstan)
+packages(rv)
+packages(car)
+rstan_options(auto_write = TRUE)
+options(mc.cores = min(c(parallel::detectCores(), 8)))
+
+nchains <-  min(c(parallel::detectCores(), 8))
+niters <- 5000
+nkeep <- 2500
+nthin <- ceiling((niters/2)*nchains/nkeep)
+dataDIR <- paste(rootDIR, "Data", sep="/")
+```
+## Introductory Examples 
+
+In this session, we will learn about the use of Bayesian inference with examples commonly encountered in ecological and environmental literature. These examples typically involve response variable distributions that are standard and covered in statistical textbooks. We will emphasize the flexibility of the Bayesian approach and explore how these models can be expanded to increase their realism compared to the data generation process.
+
+The guiding principle for Bayesian applications in environmental and ecological statistics should adhere to the three criteria of an applied statistical model recommended by Cox (1995):
+
+1. A probability distribution model for the response variable.
+1. A parameter vector that defines the distribution model, where some parameters reflect features of the system under study.
+1. The inclusion or representation of the data-generating process.
+
+Of these criteria, the last one, the data-generating process, holds significant importance. Our aim is to develop models that are relevant to the problem at hand and reflect likely causal relationships rather than mere correlations. Furthermore, environmental and ecological data are often observational, meaning we collect the data without prior knowledge of the appropriate model or method for analysis. The statistics we learned in graduate school typically assume that we already know the correct model. We teach statistics chapter by chapter, assuming that we have the right model in mind. However, when working with data from environmental and ecological monitoring programs, we often start collecting data without a clear idea of the questions we want to answer. For instance, most of the data used in studying the effects of climate change were collected without specific hypotheses in mind. In my opinion, analyzing environmental/ecological data often begins with identifying the problem to be addressed. Since all models are inherently wrong (yet some are useful), our focus lies in determining how and when a flawed model can be useful and in what way.
+
+I have found the following process to be effective in analyzing environmental/ecological data:
+
+1. Exploratory analysis using many plots
+1. Start with simple models that can be readily implemented in R.
+1. Explore the model fit and identify its weaknesses using the concept of "posterior simulation." This involves using the fitted model to predict what we want to learn and compare it with what we already know.
+1. Based on the identified weaknesses, reformulate the model to address those shortcomings.
+1. Implement the model in Stan to further assess problems such as computational stability and identifiability (e.g., the snake fungal disease example with unknown error rates).
+1. Repeat the posterior simulation to determine where and when the model is useful.
+
+By following this iterative process, we can refine our models, understand their limitations, and identify their utility in analyzing environmental and ecological data.
+
+### Example 1 -- The Effect of Gulf of Mexico Hypoxia on Benthic Communities
+Section 4.2.2, Qian et al (2022).
+
+```{R gom data, tidy=TRUE}
+benthic.data <- read.csv(paste(dataDIR, "BenthicData.csv", sep="/"),
+                         header=T)
+benthic.data$area2 <-
+    ordered(benthic.data$area2,
+            levels=levels(ordered(benthic.data$area2))[c(2,1,3)])
+benthic.data$Area <-
+    ordered(benthic.data$Area,
+            levels=levels(ordered(benthic.data$Area))[c(2,1,3)])
+head(benthic.data)
+names(benthic.data)
+## Station: core,
+```
+
+Initial analysis (ANOVA) was presented in Baustian et al (2009). It was published, but unsatisfactory nevertheless. Qian et al (2009) presented a hierarchical modeling alternative implemented in WinBUGS. The original study designed the sampling to mimic a randomized experiment. However, the treatment (benthic hypoxia) cannot be randomly assigned. Confounding factors cannot be ignored.  Instead of a hypothesis testing problem (ANOVA), we address the problem as an estimation problem -- estimating benthic community abundance and richness in three zones, hypoxic zone, inshore, and offshore "controls."  
+
+- MLE model -- multilevel model with sampling cores nested in three zones.
+
+```{R gom mle, fig.height=5.75, fig.width=4, tidy=TRUE}
+benthic.data$AS <- with(benthic.data, factor(paste(Area, Station, sep=":")))
+benthicAb.Lme1 <- lmer(log(Abundance) ~ 1+(1|AS)+(1|Area), data=benthic.data)
+benthicRn.Lme1 <- lmer(log(Richness) ~ 1+(1|AS)+(1|Area), data=benthic.data)
+summary(benthicAb.Lme1)
+summary(benthicRn.Lme1)
+
+dotLmeAb1 <- dotplot(ranef(benthicAb.Lme1, condVar=T))
+dotLmeRn1 <- dotplot(ranef(benthicRn.Lme1, condVar=T))
+print(dotLmeRn1[[1]], pos=c(0,0,1,0.75), more=T)
+print(dotLmeRn1[[2]], pos=c(0,0.65, 1,1), more=F)
+
+print(dotLmeAb1[[1]], pos=c(0,0,1,0.75), more=T)
+print(dotLmeAb1[[2]], pos=c(0,0.65, 1,1), more=F)
+```
+
+Within zone variance is too high for the MLE method to properly estimate the among zone variance.  
+
+- Bayesian model
+Using a Bayesian hierarchical model, separating cores within each zone:
+$$
+y_{ijk} \sim N(\mu_{jk}, \sigma_{yk}^2)
+$$
+where, $ijk$ represents the $i$th observation from the $jth$ core, in zone $k$, and 
+$$
+\mu_{jk} \sim N(\theta_k, \sigma^2_z)
+$$
+and finally, 
+$$
+\theta_k \sim N(\mu_{hyp}, \sigma^2_{hyp})
+$$
+
+```{R gom model 1, tidy=TRUE}
+## Station: core,
+## Area: zone
+stan1_gom <- " 
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  int I;  //number of zones
+  real y[K]; //observed response
+  int core[K]; //core index
+  int zone[K]; //zone index
+  int core_zone[J]; //zone
+}
+parameters{
+  real mu[J];
+  real theta[I];
+  real mu_hyp;
+  real<lower=0> sigma_y[I];
+  real<lower=0> sigma_i;
+  real<lower=0> sigma_hyp;
+}
+model{
+  sigma_hyp ~ normal(0,1); // for fast comuting 
+  for (i in 1:I){
+    theta[i] ~ normal(mu_hyp, sigma_hyp);
+  }
+  for (j in 1:J){
+    mu[j] ~ normal(theta[core_zone[j]], sigma_i);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu[core[k]], sigma_y[zone[k]]);
+  }
+}
+generated quantities{
+  real delta1;
+  real delta2;
+  real delta3;
+  delta1 = theta[2]-theta[1];
+  delta2 = theta[2]-theta[3];
+  delta3 = theta[1]-theta[3];
+}
+"
+stan.fit <- stan_model(model_code=stan1_gom)
+```
+
+We used a `generated quantities` code block to directly calculate the differences between two zones.
+
+Now organizing input data and run the model
+
+```{R gom run m1, tidy=TRUE}
+stan.in3 <- function(data = benthic.data, y.col=5,  ## richness
+                     chains=nchains){ ## no slope
+    n <- dim(data)[1]
+    y <- log(data[,y.col])
+    core <- as.numeric(ordered(data$Station))
+    n.core <- max(core)
+    zone <- as.numeric(ordered(data$Area))
+    n.zone <- max(zone)
+    oo <- order(core)
+    ind <- cumsum(table(core[oo]))
+    Core.zone <- zone[oo][ind] ## each core belongs to which zone
+    stan.dat <- list(K=n, J=n.core, I=n.zone, y=y, core=core,
+                     zone=zone, core_zone=Core.zone)
+    inits <- list()
+    for (i in 1:chains)
+        inits[[i]] <- list( mu = rnorm(n.core), theta=rnorm(n.zone),
+                           mu_hyp=rnorm(1), sigma_i=runif(1),
+                           sigma_y=runif(n.zone), sigma_hyp=runif(1))
+    parameters <- c("mu","theta","mu_hyp", "sigma_y", "sigma_i",
+                    "sigma_hyp",  "delta1", "delta2","delta3")
+    return(list(para=parameters, data=stan.dat, inits=inits,
+                n.chains=chains))
+}
+
+input.to.stan <- stan.in3()  ## long-runs -- results without sigma_hyp prior saved
+fit2keep <- sampling(stan.fit, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=20))
+print(fit2keep)
+rich_stan <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+input.to.stan <- stan.in3(y.col = 6)  ## abundance
+fit2keep <- sampling(stan.fit, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=20))
+print(fit2keep)
+abun_stan <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## Extract output
+## zone means
+tempA <- abun_stan[1:15]
+names(tempA) <- paste("$\\mu_{", 1:15, "}$", sep="")
+tempR <- rich_stan[1:15]
+names(tempR) <- paste("$\\mu_{", 1:15, "}$", sep="")
+## zone mean differences
+delta0R <- rich_stan[25:27]
+delta0A <- abun_stan[25:27]
+names(delta0R) <- c("H-I","H-O","I-O")
+names(delta0A) <- c("H-I","H-O","I-O")
+```
+
+We noticed warning messages about divergence transition. It is a sign of computational difficulties in sampling the posterior distribution.
+
+```{R gom m1 Neals funnel, tidy=TRUE, fig.height=3, fig.width=5, dev="tikz"}
+par(mfrow=c(1,2),mar=c(3,3,1,1),
+    mgp=c(1.25,0.125,0), las=1,tck=0.01)
+plot(rich_stan$mu_hyp, log(rich_stan$sigma_hyp), cex=0.5,
+     ylim=c(-3.5,log(3)), xlim=c(-0,5),
+     xlab="$\\mu_{hyp}$", ylab="$\\log(\\sigma_{hyp})$")
+text(1.5,-3, "Richness")
+plot(abun_stan$mu_hyp, log(abun_stan$sigma_hyp), cex=0.5,
+##     ylim=c(-3.5,log(150)), xlim=c(-100,100),
+     xlab="$\\mu_{hyp}$", ylab="$\\log(\\sigma_{hyp})$")
+text(3,-3, "Abundance")
+
+```
+
+An issue we encountered in this analysis is the presence of Neal's funnel, indicating a lack of information to adequately quantify both $\mu_{hyp}$ and $\sigma_{hyp}^2$ simultaneously. This often results in highly correlated $\theta_k$ values. To address this, we require an informative prior for one of the two parameters. In this case, a strong prior was used for $\sigma_{hyp}^2$, specifically a half-normal distribution N(0,1). When using a noninformative prior, the computational performance of the program is significantly slower. To mitigate computational difficulties, we can reparameterize $\theta_k$. Instead of directly modeling it as a normal random variable with parameters $\mu_{hyp}$ and $\sigma_{hyp}^2$, we introduce a new parameter $z_k \sim N(0,1)$ and model $\theta_k$ as a transformed variable: $\theta_k = \mu_{hyp} + \sigma_{hyp} z_k$. Consequently, we no longer directly sample $\theta_k$, which effectively reduces the occurrence of divergent transitions. However, the underlying model remains the same, and the presence of Neal's funnel persists.
+
+The computational challenges encountered during this analysis prompted us to investigate the problem further. We realized that the available data do not provide sufficient information to simultaneously quantify $\theta_k$, $\mu_{hyp}$, and $\sigma_{hyp}^2$, primarily due to the substantial within-zone variation among the cores. The multilevel model indicated that including zone as a random effect does not effectively explain the overall variance. As a result, we proposed two alternative models that avoid directly parameterizing the among-zone variation.
+
+In the first alternative, we removed the zone as a hierarchical factor and treated the core means as exchangeable:
+$$
+\mu_{jk} \sim N(\mu_{hyp}, \sigma^2_{hyp})
+$$
+We estimated each zone mean as the average of the means of the cores within that zone. To accommodate relatively constrained priors for variance parameters (e.g., half-normal N(0,0.5)), the response variable was standardized.
+
+```{R gom model 2, tidy=TRUE}
+###
+### First alternative (One-way ANOVA)
+###
+stan2_gom <- "
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  real y[K]; //observed response
+  int core[K]; //core index
+}
+parameters{
+  real mu[J];
+  real mu_hyp;
+  real<lower=0> sigma_y;
+  real<lower=0> sigma_hyp;
+}
+model{
+  sigma_hyp ~ normal(0,0.5);
+  sigma_y ~ normal(0,0.5);
+  for (j in 1:J){
+    mu[j] ~ normal(mu_hyp, sigma_hyp);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu[core[k]], sigma_y);
+  }
+}
+"
+stan.fit2 <- stan_model(model_code=stan2_gom)
+
+stan.in4 <- function(data = benthic.data, y.col=5,
+                     chains=nchains){ ## no slope
+  n <- dim(data)[1]
+  y <- log(data[,y.col])
+  y_ave <- mean(y)
+  y_sd <- sd(y)
+
+  y <- (y-y_ave)/y_sd
+  core <- as.numeric(ordered(data$Station))
+  n.core <- max(core)
+
+  stan.dat <- list(K=n, J=n.core, y=y, core=core)
+  inits <- list()
+  for (i in 1:chains)
+    inits[[i]] <- list( mu = rnorm(n.core),
+                        mu_hyp=rnorm(1),
+                        sigma_y=runif(1), sigma_hyp=runif(1))
+  parameters <- c("mu","mu_hyp", "sigma_y", "sigma_hyp")
+  return(list(para=parameters, data=stan.dat, inits=inits,
+              n.chains=chains, y_cen=y_ave, y_spd=y_sd))
+}
+
+input.to.stan <- stan.in4()
+fit2keep <- sampling(stan.fit2, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains)
+print(fit2keep)
+rich_stan2 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## processing output
+core <- as.numeric(ordered(benthic.data$Station))
+n.core <- max(core)
+zone <- as.numeric(ordered(benthic.data$Area))
+n.zone <- max(zone)
+oo <- order(core)
+ind <- cumsum(table(core[oo]))
+Core.zone <- zone[oo][ind] ## each core belongs to which zone
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+## return to the original scale
+core1.musR <- input_mu + input_sd*rich_stan2[1:15]
+zone11.Rmu <- mean(core1.musR[Core.zone==1])
+zone12.Rmu <- mean(core1.musR[Core.zone==2])
+zone13.Rmu <- mean(core1.musR[Core.zone==3])
+
+deltaR11 = zone12.Rmu-zone11.Rmu
+deltaR12 = zone12.Rmu-zone13.Rmu
+deltaR13 = zone11.Rmu-zone13.Rmu
+
+delta1R <- c(deltaR11, deltaR12, deltaR13)
+names(delta1R) <- c("H-I","H-O","I-O")
+
+## repeat for Abundance:
+input.to.stan <- stan.in4(y.col=6)
+fit2keep <- sampling(stan.fit2, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains)
+print(fit2keep)
+abun_stan2 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+## processing output
+core <- as.numeric(ordered(benthic.data$Station))
+n.core <- max(core)
+zone <- as.numeric(ordered(benthic.data$Area))
+n.zone <- max(zone)
+oo <- order(core)
+ind <- cumsum(table(core[oo]))
+Core.zone <- zone[oo][ind] ## each core belongs to which zone
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+## return to the original scale
+core1.musA <- input_mu + input_sd*abun_stan2[1:15]
+zone11.Amu <- mean(core1.musA[Core.zone==1])
+zone12.Amu <- mean(core1.musA[Core.zone==2])
+zone13.Amu <- mean(core1.musA[Core.zone==3])
+
+deltaA11 = zone12.Amu-zone11.Amu
+deltaA12 = zone12.Rmu-zone13.Amu
+deltaA13 = zone11.Rmu-zone13.Amu
+
+delta1A <- c(deltaA11, deltaA12, deltaA13)
+names(delta1A) <- c("H-I","H-O","I-O")
+```
+
+The second alternative is to mimic the multilevel model:
+$$
+\begin{array}{rcl}
+y_i & \sim & N(\mu_i, \sigma^2_y)\\
+\mu_i & = & \mu_0 + \alpha_{k[i]} + \beta_{j[i]}\\
+\alpha_k & \sim & N(0,\sigma_z^2)\\
+\beta_j & \sim & N(0,\sigma_c^2)
+\end{array}
+$$
+where $k[i]$ and $j[i]$ represent that the $i$th observation is in $k$th zone and $j$th core. 
+
+```{R gom model 3, tidy=TRUE}
+stan3_gom <- "
+data{
+  int K;  //total sample size
+  int J;  //number of sediment cores
+  int I;  //number of zones
+  real y[K]; //observed response
+  int core[K]; //core index
+  int zone[K]; //zone index
+}
+parameters{
+  real muK[J];
+  real muZ[I];
+  real mu0;
+  real<lower=0> sigmaY;
+  real<lower=0> sigmaK;
+  real<lower=0> sigmaZ;
+}
+model{
+  sigmaK ~ normal(0,0.5);
+  sigmaZ ~ normal(0,0.5);
+  sigmaY ~ normal(0,0.5);
+  for (i in 1:I){
+    muZ[i] ~ normal(0, sigmaZ);
+  }
+  for (j in 1:J){
+    muK[j] ~ normal(0, sigmaK);
+  }
+  for (k in 1:K){
+    y[k] ~ normal(mu0+muK[core[k]]+muZ[zone[k]], sigmaY);
+  }
+}
+generated quantities{
+  real delta1;
+  real delta2;
+  real delta3;
+  delta1 = muZ[2]-muZ[1];
+  delta2 = muZ[2]-muZ[3];
+  delta3 = muZ[1]-muZ[3];
+}
+"
+
+stan.fit3 <- stan_model(model_code=stan3_gom)
+
+stan.in5 <- function(data = benthic.data, y.col=5, chains=nchains){
+  n <- dim(data)[1]
+  y <- log(data[,y.col])
+  y_ave <- mean(y)
+  y_sd <- sd(y)
+  y <- (y-y_ave)/y_sd
+  core <- as.numeric(ordered(data$Station))
+  n.core <- max(core)
+  zone <- as.numeric(ordered(data$Area))
+  n.zone <- max(zone)
+
+  stan.dat <- list(K=n, J=n.core, I=n.zone, y=y, core=core, zone=zone)
+  inits <- list()
+  for (i in 1:chains)
+    inits[[i]] <- list( muK = rnorm(n.core),
+                        muZ=rnorm(n.zone),
+                        mu0=rnorm(1),
+                       sigmaY=runif(1), sigmaK=runif(1),
+                       sigmaZ=runif(1))
+  parameters <- c("mu0","muK", "muZ", "sigmaY", "sigmaK",
+                  "sigmaZ", "delta1", "delta2", "delta3")
+  return(list(para=parameters, data=stan.dat, inits=inits,
+              n.chains=chains, y_cen=y_ave, y_spd=y_sd))
+}
+
+input.to.stan <- stan.in5()
+fit2keep <- sampling(stan.fit3, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=15))
+print(fit2keep)
+rich_stan3 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+zone2.musR <- input_sd*rich_stan3[17:19]
+core2.musR <- input_mu+input_sd*rich_stan3[2:16]
+
+zone21.Rmu <- mean(core2.musR[Core.zone==1]) + zone2.musR[1]
+zone22.Rmu <- mean(core2.musR[Core.zone==2]) + zone2.musR[2]
+zone23.Rmu <- mean(core2.musR[Core.zone==3]) + zone2.musR[3]
+
+deltaR21 = zone22.Rmu-zone21.Rmu
+deltaR22 = zone22.Rmu-zone23.Rmu
+deltaR23 = zone21.Rmu-zone23.Rmu
+
+delta2R <- c(deltaR21, deltaR22, deltaR23)
+names(delta2R) <- c("H-I","H-O","I-O")
+
+input.to.stan <- stan.in5(y.col=6)
+fit2keep <- sampling(stan.fit3, data = input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars = input.to.stan$para,
+                     iter=niters, thin=nthin,
+                     chains=input.to.stan$n.chains,
+                     control=list(adapt_delta=0.99, max_treedepth=15))
+print(fit2keep)
+abun_stan3 <- rvsims(as.matrix(as.data.frame(extract(fit2keep))))
+
+input_sd <- input.to.stan$y_spd
+input_mu <- input.to.stan$y_cen
+zone2.musA <- input_sd*abun_stan3[17:19]
+core2.musA <- input_mu+input_sd*abun_stan3[2:16]
+
+zone21.Amu <- mean(core2.musA[Core.zone==1]) + zone2.musA[1]
+zone22.Amu <- mean(core2.musA[Core.zone==2]) + zone2.musA[2]
+zone23.Amu <- mean(core2.musA[Core.zone==3]) + zone2.musA[3]
+
+deltaA21 = zone22.Amu-zone21.Amu
+deltaA22 = zone22.Amu-zone23.Amu
+deltaA23 = zone21.Amu-zone23.Amu
+
+delta2A <- c(deltaA21, deltaA22, deltaA23)
+names(delta2A) <- c("H-I","H-O","I-O")
+```
+
+Now we make some comparisons of the three alternative models
+
+```{R gom compare, tidy=TRUE, fig.width=5, fig.height=4.75, dev="tikz"}
+## 1. Estimated core means
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
+mlplot(tempR, xlab="Original model", top.axis=F)
+mlplot(core1.musR, xlab="Alternative model 1",
+       main="log Richness", axes=F)
+axis(1)
+mlplot(core2.musR, xlab="Alternative model 2", axes=F)
+axis(1)
+
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
+mlplot(tempA, xlab="Original model", top.axis=F)
+mlplot(core1.musA, xlab="Alternative model 1",
+       main="log Abundance", axes=F)
+axis(1)
+mlplot(core2.musA, xlab="Alternative model 2", axes=F)
+axis(1)
+```
+
+```{R gom compare 2, tidy=TRUE, fig.width=5, fig.height=3.75, dev="tikz"}
+## 2. Estimated zone means
+#### extract zone means and mean differences
+zone0R.thetas <- rich_stan[16:18]
+names(zone0R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+zone0A.thetas <- abun_stan[16:18]
+names(zone0A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone1R.thetas <- c(zone11.Rmu, zone12.Rmu, zone13.Rmu)
+names(zone1R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone1A.thetas <- c(zone11.Amu, zone12.Amu, zone13.Amu)
+names(zone1A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone2R.thetas <- c(zone21.Rmu, zone22.Rmu, zone23.Rmu)
+names(zone2R.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+zone2A.thetas <- c(zone21.Amu, zone22.Amu, zone23.Amu)
+names(zone2A.thetas) <- c("Inshore", "Hypoxic","Offshore")
+
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=0.01)
+mlplot(zone0R.thetas, xlab="Original model", top.axis=F, xlim=c(2,3.5))
+abline(v=0)
+mlplot(zone1R.thetas, xlab="Alternative model 1", main="log Richness",
+       axes=F, xlim=c(2,3.5))
+axis(1)
+abline(v=0)
+mlplot(zone1R.thetas, xlab="Alternative model 2", axes=F, xlim=c(2,3.5))
+axis(1)
+abline(v=0)
+
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
+mlplot(zone0A.thetas, xlab="Original model", top.axis=F, xlim=c(3.6,6))
+mlplot(zone1A.thetas, xlab="Alternative model 1", main="log Abundance",
+       axes=F, xlim=c(3.6,6))
+axis(1)
+mlplot(zone1A.thetas, xlab="Alternative model 2", axes=F, xlim=c(3.6,6))
+axis(1)
+
+## between zone differences
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck= -0.01)
+mlplot(delta0A, xlab="Original model 1", top.axis=F, xlim=c(-2.5,1.5))
+abline(v=0)
+mlplot(delta1A, xlab="Alternative model 1",
+       main="log Abundance", axes=F,
+       xlim=c(-2.5,1.5))
+axis(1)
+abline(v=0)
+mlplot(delta2A, xlab="Alternative model 2", axes=F, xlim=c(-2.5,1.5))
+axis(1)
+abline(v=0)
+
+par(mfrow=c(1,3), mar=c(3,1,2,0.1), mgp=c(1.25,0.125,0), las=1, tck=-0.01)
+mlplot(delta0R, xlab="Original model", top.axis=F, xlim=c(-1.5,0.5))
+abline(v=0)
+mlplot(delta1R, xlab="Alternative model 1",
+       main="log Richness", axes=F, xlim=c(-1.5,0.5))
+abline(v=0)
+axis(1)
+mlplot(delta2R, xlab="Alternative model 2", axes=F, xlim=c(-1.5,0.5))
+axis(1)
+abline(v=0)
+
+```
+
