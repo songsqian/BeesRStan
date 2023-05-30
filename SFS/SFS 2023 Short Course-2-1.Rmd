@@ -24,6 +24,7 @@ source(paste(rootDIR, "BeesRStan.R", sep="/"))
 
 require(rstan)
 packages(rv)
+packages(arm)
 packages(car)
 rstan_options(auto_write = TRUE)
 options(mc.cores = min(c(parallel::detectCores(), 8)))
