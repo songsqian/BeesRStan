@@ -23,6 +23,7 @@ source(paste(rootDIR, "BeesRStan.R", sep="/"))
 dataDIR <- paste(rootDIR, "Data", sep="/")
 
 require(rstan)
+packages(arm)
 packages(rv)
 packages(car)
 packages(maptools)
