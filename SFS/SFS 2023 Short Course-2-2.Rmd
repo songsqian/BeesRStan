@@ -1,0 +1,469 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+source(paste(rootDIR, "FrontMatter.R", sep="/"))
+
+require(rstan)
+packages(rv)
+packages(car)
+rstan_options(auto_write = TRUE)
+options(mc.cores = min(c(parallel::detectCores(), 8)))
+
+nchains <-  min(c(parallel::detectCores(), 8))
+niters <- 5000
+nkeep <- 2500
+nthin <- ceiling((niters/2)*nchains/nkeep)
+dataDIR <- paste(rootDIR, "Data", sep="/")
+```
+
+### Example 2 -- Zero-Inflation or Not?
+In this example, we introduce the concept of Bayesian posterior simulation for model evaluation.
+
+Incidental Catch in Fisheries example (Hilborn and Mangel, 1997. *Ecological Detective*) aimed to determine the minimum sample size of "statistically meaningful data" required to estimate the mean bycatch rate with a limited level of uncertainty. The original study (Bartle, 1991) used Central Limit Theorem-based confidence intervals to define an acceptable level of uncertainty. The goal was to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) utilized the negative binomial distribution to describe the bycatch data, where the response variable is the bycatch count, a count variable taking only non-negative integer values.
+
+Fisher et al. (1943) suggested that the Poisson distribution is one of three types of distributions for biological measurements, including the Poisson distribution for count data. 
+
+The Poisson distribution has one parameter ($\lambda$), representing the mean. The probability function is given by
+$$
+\pi(Y=k) = \frac{\lambda^ke^{-\lambda}}{k!}
+$$
+When observing independent observations $y_1,\cdots,y_n$, the log-likelihood function is
+$$
+LL = \log\left (\prod_{i=1}^n\frac{\lambda^{y_i}e^{-\lambda}}{y_i!}\right )\propto \log(\lambda)\sum_{i=1}^ny_i - n\lambda
+$$
+In a Bayesian statistics, we normally use the gamma distribution as the prior for $\lambda$, because the posterior distribution of $\lambda$ is also a gamma distribution. If the prior is $\lambda\sim \text{gamma}(\alpha, \beta)$, the posterior is $\lambda \mid y_1,\ldots,y_n \sim \text{gamma}(\alpha+\sum_{i=1}^y, \beta+n)$.  The gamma distribution is the same as the $\chi^2$ distribution, which Fisher et al (1943) used to derive the negative binomial distribution. 
+
+We fit the bycatch data using both Poisson and negative binomial distributions to show why the negative binomial model is more useful.
+
+```{R bycatch 1, tidy=TRUE}
+zipdata <- data.frame(Capture=0:17,
+                      numb=c(807,37,27,8,4,4,1,3,1,0,0,2,1,1,0,0,0,1))
+zippos <- rep(zipdata[-1,1], zipdata$numb[-1])
+zip0 <- zipdata$numb[1]
+
+##############################################
+## Simple models (without zero inflation) ####
+##############################################
+
+## the Poisson model
+Pois_bycatch <- "
+data{
+      int<lower=1> n0; //number of 0's
+      int<lower=1> np; //number of non-zero counts
+      int<lower=1> yp[np];
+   }
+   parameters{
+      real<lower=0> lambda;
+   }
+   model{
+     target += n0*poisson_log_lpmf(0|log(lambda));
+     target += poisson_log_lpmf(yp|log(lambda));
+   }
+"
+fitPois <- stan_model(model_code=Pois_bycatch)
+
+## Neg_binomial
+NB_bycatch <- "
+data{
+      int<lower=1> n0; //number of 0's
+      int<lower=1> np; //number of non-zero counts
+      int<lower=1> yp[np];
+   }
+   parameters{
+      real<lower=0> mu;
+      real<lower=0> r;
+   }
+   model{
+     mu ~ normal(0,2);
+     r ~ normal(0,2);
+     target += n0*neg_binomial_2_log_lpmf(0 | log(mu), r);
+     target += neg_binomial_2_log_lpmf(yp | log(mu), r);
+   }
+"
+fitNB <- stan_model(model_code=NB_bycatch)
+```
+
+We separated 0s from non-zero observations to make the code more comparable to the zero-inflated alternatives.
+
+```{R bycatch stan input, tidy=TRUE}
+## one input function for both models
+bycatch_input <- function(yp=zippos, n0=zip0, model="Pois", n.chains=nchains){
+    N <- length(yp)+n0
+    np <- length(yp)
+    data <- list(np=np, n0=n0, yp=yp)
+    inits <- list()
+    for (i in 1:n.chains){
+        if (model=="Pois")
+            inits[[i]] <- list(lambda=runif(1))
+        else
+            inits[[i]] <- list(mu=runif(1), r=runif(1))
+    }
+    if (model=="Pois")
+        pars <- c("lambda")
+    else
+        pars <- c("mu","r")
+  return(list(data=data, init=inits, nchains=n.chains, para=pars, model=model))
+}
+```
+
+Fitting the model
+
+```{R bycatch stan output, tidy=TRUE, fig.height=3.5, fig.width=3.5}
+## the Poisson model
+input.to.stan <- bycatch_input()
+keep_Pois <- sampling(fitPois, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_Pois)
+Pois_stanout <- extract(keep_Pois, pars="lambda")
+Pois_coef <- rvsims(as.matrix(as.data.frame(Pois_stanout)))
+
+## negative bin:
+input.to.stan <- bycatch_input(model="NB")
+keep_NB <- sampling(fitNB, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_NB)
+pairs(keep_NB, pars=c("mu","r"))
+NB_stanout <- extract(keep_NB, pars=c("mu","r"))
+NB_coef <- rvsims(as.matrix(as.data.frame(NB_stanout)))
+```
+
+```{R, tidy=TRUE, fig.height=3, fig.width=3, dev="tikz"}
+## Comparison
+means <- c(Pois_coef[1], NB_coef[1])
+names(means) <- c("$\\lambda_{pois}$", "$\\mu_{nb}$")
+
+par(mgp=c(1.25,0.25,0), tck=-0.01)
+mlplot(means, xlab="Estimated mean by-catch per tow")
+
+```
+
+Posterior simulation -- using the fitted model to replicate the data repeatedly
+
+```{R bycatch post_sim, fig.height=3, fig.width=5, tidy=TRUE}
+## simulations
+nsims <- length(Pois_stanout$lambda)
+n <- length(zippos)+zip0
+
+### Poisson model
+n0_pois <- mu_pois <- sig_pois <- NULL
+for (i in 1:nsims){
+    tmp <- rpois(n, lambda=Pois_stanout$lambda[i])
+    n0_pois <- c(n0_pois, mean(tmp==0))
+    mu_pois <- c(mu_pois, mean(tmp))
+    sig_pois <- c(sig_pois, sd(tmp))
+}
+### here is why I like `rv`
+tmp <- rvpois(1, Pois_stanout$lambda)
+par(mfrow=c(1,3), mar=c(3, 3, 1, 1), mgp=c(1.5, 0.25, 0), las=1, tck=-0.01)
+hist(summary((tmp==0))$mean, xlab="fraction of 0s", main="")
+hist(summary(tmp)$mean, xlab="mean", main="")
+hist(summary(tmp)$sd, xlab="sd", main="")
+```
+```{R, fig.height=2.5, fig.width=5}
+### negative Bin:
+n0_NB <- mu_NB <- sig_NB <- NULL
+for (i in 1:nsims){
+    tmp <- rnbinom(n, mu=NB_stanout$mu[i], size=NB_stanout$r[i])
+    n0_NB <- c(n0_NB, mean(tmp==0))
+    mu_NB <- c(mu_NB, mean(tmp))
+    sig_NB <- c(sig_NB, sd(tmp))
+}
+## or use rv (generating from gamma-poisson conjugate):
+tmp1 <- rvgamma(1, NB_stanout$r, NB_stanout$r/NB_stanout$mu)
+tmp <- rvpois(1, tmp1)
+par(mfrow=c(1,3), mar=c(3, 3, 1, 1), mgp=c(1.5, 0.25, 0), las=1, tck=-0.01)
+hist(summary(tmp==0)$mean, xlab="fraction of 0s", main="")
+hist(summary(tmp)$mean, xlab="mean", main="")
+hist(summary(tmp)$sd, xlab="sd", main="")
+```
+
+Put them together
+
+```{R, fig.height=4, fig.width=5}
+par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=-0.01)
+hist(n0_pois, xlim=range(c(n0_pois, n0_NB, zip0/n)),
+     xlab="fraction of zeros", ylab="Poisson", main="",
+     border="white", density=-1, col="gray", yaxt="n")
+abline(v=zip0/n)
+hist(mu_pois,
+     xlim=range(c(mu_pois, mu_NB, mean(c(rep(0,zip0),zippos)))),
+     xlab="mean", ylab="", yaxt="n", main="",
+     border="white", density=-1, col="gray")
+abline(v=mean(c(rep(0,zip0),zippos)))
+#hist(sig_pois,
+#     xlim=range(c(sig_pois, sig_NB, sd(c(rep(0,zip0),zippos)))),
+#     xlab="standard deviation", ylab="", yaxt="n", main="",
+#     border="white", density=-1, col="gray")
+hist(sig_pois,
+     xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
+     xlab="standard deviation", ylab="", main="",yaxt="n",
+     border="gray", density=-1, col="gray")
+abline(v=sd(c(rep(0,zip0),zippos)))
+
+hist(n0_NB, xlim=range(c(n0_pois, n0_NB,zip0/n)),yaxt="n",
+     xlab="fraction of zeros", ylab="negative binomial", main="",
+     border="white", density=-1, col="gray")
+abline(v=zip0/n)
+hist(mu_NB,
+     xlim=range(c(mu_pois, mu_NB,mean(c(rep(0,zip0),zippos)))),
+     xlab="mean", ylab="", main="",yaxt="n",
+     border="white", density=-1, col="gray")
+abline(v=mean(c(rep(0,zip0),zippos)))
+hist(sig_NB,
+     xlim=range(c(sig_pois, sig_NB,sd(c(rep(0,zip0),zippos)))),
+     xlab="standard deviation", ylab="", main="",yaxt="n",
+     border="white", density=-1, col="gray")
+abline(v=sd(c(rep(0,zip0),zippos)))
+```
+
+The Poisson model cannot replicate the variance and the fraction of zeros of the data. The data are zero inflated if the Poisson model is used. 
+
+**Zero-Inflated** count data models
+
+The zero-inflated model is designed to handle count data that exhibits excess zeros. Under certain conditions, the observations are always 0 (true zero). For example, there were no sea birds present.  Without knowing the conditions, we must treat observed 0s as a combination of true zeros and 0s resulted from, for example, the imperfect sampling method (i.e., bycatch happened but failed to observe).  Assuming that the chance of sampling a true 0 is $\theta$ (and a probability of $1-\theta$ sampling a Poisson counts).  The probability of observing any outcome $y_i$ is defined as follows:
+- The probability of observing 0 is given by 
+$$\pi(y_i) = \theta + (1-\theta) \cdot Pois(0|\lambda),$$ 
+where $Pois(0|\lambda)$ represents the probability of observing a zero count in a Poisson distribution with mean $\lambda$.
+- The probability of observing $y_i>0$ is given by 
+$$\pi(y_i) = (1-\theta) \cdot Pois(y_i|\lambda),$$ 
+representing the probability of observing a non-zero count in the Poisson distribution.
+- Combined together:
+$$
+\pi(y_i) = \begin{cases}\theta+(1-\theta)Pois(0\mid \lambda) & \mathrm{if}\ y_i=0\\
+(1-\theta)Pois(y_i\mid \lambda) & \mathrm{if}\ y_i > 0.\end{cases}
+$$
+The likelihood function is 
+$$
+L=[\theta+(1-\theta)e^{-\lambda}]^{n_0}\times \prod_{i=1}^{n_p}(1-\theta)\frac{\lambda^{y_i}e^{-\lambda}}{y_i!}
+$$
+The log-likelihood function is
+$$
+LL=n_0\log[\theta+(1-\theta)e^{-\lambda}]+\left (n_p\log(1-\theta)+\sum_{i=1}^n\log\left (\frac{\lambda^{y_i}e^{-\lambda}}{y_i!}\right )\right )
+$$
+Writing the log-likelihood in Stan:
+```
+model{
+  target += n0*log_sum_exp(log(theta), log1m(theta)-\lambda);
+  target += np*log1m(theta) + poisson_lpmf(yp| lambda);
+}
+```
+Because $\log(\theta)$ is the log of probability of observing a true 0, we can also directly use the Stan function `bernoulli_logit_lpmf` to write the code:
+```
+model{
+  target += n0*log_sum_exp(bernoulli_logit_lpmf(1|zi),
+bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
+  target += np*bernoulli_logit_lpmf(0|zi) +
+            poisson_log_lpmf(yp | eta);
+}
+```
+where `zi` is the logit of the probability of a true zero ($z_i=\text{logit}(\theta)$) and `eta` is the log of the Poisson parameter ($\eta = \log(\lambda)$).
+
+Lambert (1992) introduced a generalized linear model for zero-inflated Poisson process. In the model, the Poisson model parameter $\lambda$ and the binomial model parameter $\theta$ are modeled as linear functions of predictors through the respective link function:
+$$
+\begin{array}{rcl}
+\log(\lambda) & = & \mathbf{X\beta}\\
+\mathrm{logit}(\theta) & = & \mathbf{Z\alpha}
+\end{array}
+$$
+The R package `pscl` implements the MLE of the Lambert ZIP model. 
+
+Fitting the models:
+
+```{R bycatch zero infl, tidy=TRUE}
+zip_bycatch <-"
+data{
+  int<lower=1> n0;
+  int<lower=1> np;
+  int<lower=1> yp[np];
+}
+parameters{
+  real<lower=0,upper=1> theta;
+  real<lower=0> lambda;
+}
+transformed parameters{
+  real eta;
+  real zi;
+  eta = log(lambda);
+  zi = logit(theta);
+}
+model{
+  theta ~ beta(1,1);
+  lambda ~ normal(0,5);
+  target += n0*log_sum_exp(bernoulli_logit_lpmf(1|zi),
+bernoulli_logit_lpmf(0|zi)+poisson_log_lpmf(0|eta));
+  target += np*bernoulli_logit_lpmf(0|zi) +
+            poisson_log_lpmf(yp | eta);
+}
+"
+
+zinb_bycatch <-"
+data{
+  int<lower=1> n0;
+  int<lower=1> np;
+  int<lower=1> yp[np];
+}
+parameters{
+  real<lower=0,upper=1> theta;
+  real<lower=0> mu;
+  real<lower=0> r;
+}
+transformed parameters{
+  real eta;
+  eta=log(mu);
+}
+model{
+  theta ~ beta(1,1);
+  mu ~ normal(0,5);
+  r ~ normal(0,5);
+  target += n0*log_sum_exp(log(theta),
+                           log1m(theta)+neg_binomial_2_log_lpmf(0|eta,r));
+  target += np*log1m(theta) +
+            neg_binomial_2_log_lpmf(yp | eta, r);
+}
+"
+
+##############################################
+fit_zip <- stan_model(model_code = zip_bycatch)
+fit_zinb <- stan_model(model_code = zinb_bycatch)
+##############################################
+```
+
+Processing data and initial values
+
+```{R bycatch stan results, tidy=TRUE, fig.width=4, fig.width=4}
+##############################################
+## The data and initial values
+##############################################
+ZI_bycatch <- function(yp=zippos, n0=zip0, model="zip", n.chains=nchains){
+    np <- length(yp)
+    N <- np+n0
+    data <- list(np=np, n0=n0, yp=yp)
+    inits <- list()
+    for (i in 1:n.chains){
+        if (model == "zip")
+            inits[[i]] <- list(lambda=runif(1), theta=runif(1))
+        else
+            inits[[i]] <- list(mu=runif(1), r=runif(1), theta=runif(1))
+    }
+    if (model == "zip")
+        paras <- c("lambda","theta")
+    else
+        paras <- c("theta","mu","r")
+  return(list(data=data, init=inits, nchains=n.chains, para=paras, model=model))
+}
+
+input.to.stan <- ZI_bycatch()
+keep_zip <- sampling(fit_zip, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_zip)
+
+input.to.stan <- ZI_bycatch(model="zinb")
+keep_zinb <- sampling(fit_zinb, data=input.to.stan$data,
+                 init=input.to.stan$init,
+                 pars=input.to.stan$para,
+                 iter=niters,thin=nthin,
+                 chains=input.to.stan$nchains)##,
+##                 control=list(max_treedepth=20))
+print(keep_zinb)
+
+##save(keep,file="zinb_bycatch.RData")
+pairs(keep_zip, pars=c("lambda","theta"))
+pairs(keep_zinb, pars=c("mu","r","theta"))
+```
+
+Strong correlation in the zinb model indicating non-identifiability. Additional information (e.g., of $\theta$) is needed.
+
+Making comparisons
+
+```{R bycatch comps, tidy=TRUE}
+zinb_coef <- as.data.frame(extract(keep_zinb, permute=T,
+                                   pars=c("theta","mu","r")))
+zip_coef <- as.data.frame(extract(keep_zip, permute=T,
+                                  pars=c("theta","lambda")))
+
+mu <- mean(c(rep(0,zip0),zippos))
+s <- sd(c(rep(0,zip0),zippos))
+
+## percent of 0 from zinb model
+n0_zinb <- NULL
+mu_zinb <- NULL
+sig_zinb <- NULL
+for (i in 1:dim(zinb_coef)[1]){
+    n0tmp <- rbinom(1, n, zinb_coef$theta[i])
+    tmp <- c(rep(0, n0tmp), rnbinom(n-n0tmp, mu=zinb_coef$mu[i],
+                                    size=zinb_coef$r[i]))
+    n0_zinb <- c(n0_zinb, mean(tmp==0))
+    mu_zinb <- c(mu_zinb, mean(tmp))
+    sig_zinb <- c(sig_zinb, sd(tmp))
+}
+
+## percent of 0 from zip model
+n0_zip <- NULL
+mu_zip <- NULL
+sig_zip <- NULL
+for (i in 1:dim(zip_coef)[1]){
+    n0tmp <- rbinom(1, n, zip_coef$theta[i])
+    tmp <- c(rep(0, n0tmp), rpois(n-n0tmp,
+                                  lambda=zip_coef$lambda[i]))
+    n0_zip <- c(n0_zip, mean(tmp==0))
+    mu_zip <- c(mu_zip, mean(tmp))
+    sig_zip <- c(sig_zip, sd(tmp))
+}
+```
+
+```{R, fig.width=4, fig.height=4}
+par(mfrow=c(2,3), mar=c(2.5,2.5,1,1), mgp=c(1.25,0.125,0), tck=0.01)
+hist(n0_zinb, xlim=range(c(n0_zinb, zip0/n, n0_zip)), yaxt="n",
+     xlab="fraction of zeros", ylab="ZINB", main="",
+     border="white", col="gray", density=-1)
+abline(v=zip0/n)
+## mean
+hist(mu_zinb, xlim=range(c(mu_zinb, mu, mu_zip)), yaxt="n",
+     xlab="mean", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=mu)
+## sd
+hist(sig_zinb, xlim=range(c(sig_zinb, s, sig_zip)), yaxt="n",
+     xlab="standard deviation", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=s)
+
+hist(n0_zip, xlim=range(c(n0_zip, zip0/n, n0_zinb)), yaxt="n",
+     xlab="fraction of zeros", ylab="ZIP",  main="",
+     border="white", col="gray", density=-1)
+abline(v=zip0/n)
+## mean
+hist(mu_zip, xlim=range(c(mu_zip, mu, mu_zinb)), yaxt="n",
+     xlab="mean", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=mu)
+## sd
+hist(sig_zip, xlim=range(c(sig_zip, s, sig_zinb)), yaxt="n",
+     xlab="standard deviation", ylab="",  main="",
+     border="white", col="gray", density=-1)
+abline(v=s)
+
+```
+
