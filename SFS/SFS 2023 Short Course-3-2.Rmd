@@ -24,6 +24,7 @@ dataDIR <- paste(rootDIR, "Data", sep="/")
 
 require(rstan)
 packages(arm)
+packages(lattice)
 packages(rv)
 packages(car)
 packages(maptools)
