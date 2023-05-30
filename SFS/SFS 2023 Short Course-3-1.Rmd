@@ -1,0 +1,211 @@
+---
+title: "SFS 2023 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+author: "Song S. Qian"
+date: "6/3/2023"
+output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rootDIR <- "https://raw.githubusercontent.com/songsqian/BeesRStan/main/R"
+source(paste(rootDIR, "FrontMatter.R", sep="/"))
+
+dataDIR <- paste(rootDIR, "Data", sep="/")
+require(rstan)
+packages(rv)
+packages(car)
+packages(maptools)
+packages(maps)
+packages(mapproj)
+rstan_options(auto_write = TRUE)
+options(mc.cores = min(c(parallel::detectCores(), 8)))
+
+nchains <-  min(c(parallel::detectCores(), 8))
+niters <- 5000
+nkeep <- 2500
+nthin <- ceiling((niters/2)*nchains/nkeep)
+```
+## Hierarchical Models 
+A simple start -- setting environmental standard in the Everglades
+
+Richardson et al. (2007) conducted a mesocosm study in the Everglades of South Florida to investigate the response of wetland ecosystems to elevated phosphorus (P) input. They created a phosphorus gradient using artificial flumes and observed changes in the mesocosm ecosystem. The researchers determined the thresholds of total phosphorus (TP) concentrations that would lead to significant changes in algae, macroinvertebrates, and macrophytes communities. To quantify these thresholds, they utilized 12 biological indicators that represented how quickly the indicators would respond to changes in TP concentrations. The study reported the means of the 12 thresholds along with their corresponding 95% confidence intervals. In our analysis, we employed the 95% confidence intervals (typically calculated as the mean plus/minus 2 standard errors) to estimate the standard deviation of the mean thresholds.
+
+```{R everg data, tidy=TRUE, fig.width=3.25, fig.height=4}
+y.hat <- c(19.2,  13,  13, 12.4, 8.2, 19.9, 18.3,
+           15.6, 14.8, 14.5, 23.5, 15.3)
+sigma.hat <- c( 1.6, 6.4, 9.6, 16.2, 0.8,  4.2,  1.2,
+                0.9,  2.1, 10.2, 26.3, 10.3)/4
+
+metrics <- c("Mat Cover","BCD","% Tolerant Species","% Sensitive Species",
+             "% Predators","% Crustacean","% Oligchaeta","Total Utricularia",
+             "Utricularia purpurea","% diatom (stem)","% diatom (plexi)",
+             "% diatom (mat)")
+metricsTEX <- c("Mat Cover","BCD","\\% Tol Sp",
+                "\\% Sen Sp", "\\% Pred","\\% Crust",
+                "\\% Oligchaeta","Tot Utr","Utr P.",
+                "\\% diatom (stem)","\\% diatom (plexi)",
+                "\\% diatom (mat)")
+
+par(mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
+plot(range(y.hat-2*sigma.hat, y.hat+2*sigma.hat),
+     c(1,length(y.hat)), type="n",
+     xlab="TP Threshold", ylab=" ", axes=F)
+axis(1, cex.axis=0.75)
+axis(2, at=1:length(y.hat), labels=metrics, las=1, cex.axis=0.75)
+segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
+         y0=1:length(y.hat), y1=1:length(y.hat), lwd=3)#,
+#         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+segments(x0=y.hat+2*sigma.hat, x1=y.hat-2*sigma.hat,
+         y0=1:length(y.hat), y1=1:length(y.hat), lwd=1)#,
+#         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+points(x=y.hat, y=1:length(y.hat))
+abline(v=15)
+
+```
+
+Richardson et al. (2007) recommended that the total phosphorus (TP) concentration standard should be 15 $\mu$g/L, which is close to the average of the 12 means and the mean of Utricularia purpurea, a keystone species in the Everglades wetland ecosystem. However, setting a TP standard solely based on one species is less convincing due to the scientifically vague legal requirement of protecting the natural balance of flora and fauna in the Everglades. Although the value is close to the average of all examined metrics, each metric represents a specific aspect of the ecosystem and cannot alone describe the natural balance at the ecosystem level.
+
+Each metric represents a specific aspect of the ecosystem (individual species or species groups).  These species-specific indicators by themselves cannot describe the natural balance at the ecosystem level.  Suppose that there are a total of $n$ indicators to represent the Everglades wetland ecosystem and we have estimates of thresholds of these indicators ($\phi_j, j=1,\ldots,n$).  Although each individual threshold cannot adequately represent the natural imbalance, the distribution of all thresholds should provide a quantitative summary of how TP concentration levels would affect the ecosystem as a whole. Because the 12 metrics were carefully selected to represent the Everglades wetland ecosystems, ecosystem-level threshold distribution can be estimated from these individual-level thresholds.  Instead of using the average of the estimated change points of the 12 metrics, we integrate these estimates using a hierarchical model to properly represent the estimation uncertainty we have about these estimates.
+
+The available data are the estimated change point $\hat{\phi}_j$ and its standard deviation $\hat{\sigma}_j$. These two numbers form an indicator-level model:
+$$
+  \hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j).
+$$
+The estimated mean and standard deviation, $\hat{\phi}_j$ and $\hat{\sigma}_j$, summarize the information in the data. In the absence of additional information to determine the relative magnitude of thresholds for different metrics, we assume that the $\theta_j$'s can be modeled as follows:
+$$
+\theta_j \sim N(\mu, \tau^2),
+$$
+which represents a common prior distribution for $\theta_j$. This hierarchical model extends the concept of Stein's paradox from the 1960s. With 12 thresholds to estimate simultaneously, Stein's paradox informs us that estimating them individually is mathematically inadmissible. By shrinking the individually estimated means towards the overall mean, we can improve the accuracy of the overall estimation. Hierarchical modeling has shown its value in applied fields since Stein's paradox, particularly in addressing environmental and ecological data analysis problems that involve variables representing different levels of spatial, temporal, and organizational aggregations. Failing to properly address data hierarchy can lead to Simpson's paradox. 
+
+The common prior distribution used in the Everglades problem reflects two key considerations: (1) our understanding that the $\theta_j$ values are likely to differ across different metrics, and (2) our lack of understanding regarding the specific differences between the $\theta_j$ values. The variance parameter $\tau^2$ represents the between-metric variance. In this context, we expanded the meaning of $\tau^2$ to encompass the variance among all possible metric means, not just the 12 metrics represented in the available data. This hierarchical model connects all metrics together through the common prior distribution $N(\mu,\tau^2)$.
+
+Since we have no prior knowledge about the values of $\mu$ and $\tau^2$, we will utilize Stan default weakly informative priors. From the perspective of modeling individual metrics, each time we model a metric mean (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$), we employ Bayesian estimation and assign a prior distribution to the unknown metric mean $\theta_j$. In this case, the prior distribution parameters are estimated based on data from other metrics. If we have an additional metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation utilizing an informative prior. This informative prior is derived from other similar quantities. This interpretation leads to the concept of treating a prior as the distribution of similar quantities, known mathematically as exchangeable units. Studies involving similar quantities from different contexts, such as eutrophication studies in various lakes, are often referred to as parallel studies. Exchangeable units can pertain to spatial aspects (e.g., different lakes, distinct eco-regions when studying climate change impacts), temporal aspects (observations from the same location over different seasons or years), and, as illustrated in this example, organizational aspects (different metrics representing various aspects of an ecosystem). I believe that any environmental and ecological data analysis problem can be approached as a hierarchical modeling problem, considering the inherent hierarchical structure of the data.
+
+Returning to the Everglades example, we can observe the well-known shrinkage effect of hierarchical modeling, which is responsible for enhancing overall estimation accuracy. Let's provide an intuitive explanation of why shrinking estimates towards the overall mean leads to improved accuracy. When we say that an estimate has an error, we mean that the estimated value is either too high or too low. However, when we have only one parameter to estimate, we have no basis to believe that the estimate is biased towards being too high or too low. Thus, an unbiased estimator is preferred, as, on average, it tends to be correct.
+
+When we have estimates of the same parameter from multiple exchangeable units, the overall mean of these estimates serves as a reasonable reference to gauge whether an individual estimate is likely to be too high or too low. Consequently, shrinking these estimates towards the overall mean is more likely to improve their accuracy.
+
+One common computational issue in hierarchical models arises from the potential strong correlation among the multiple means (i.e., $\theta_j$ values), especially when there are only a small number of exchangeable units. This correlation often stems from the difficulty in accurately quantifying the hyperparameters ($\mu, \sigma^2$). The phenomenon known as Neal's funnel is a typical manifestation of this correlation.
+
+As we discussed earlier, we can address this challenge through reparameterizing the model. Instead of directly sampling $\theta_j$ as random variables, we can utilize the relationship between a normally distributed random variable with mean $\mu$ and standard deviation $\tau$, and a standard normal random variable $z \sim N(0,1)$:
+$$
+\theta_j = \mu + \tau \times z_j.
+$$
+By defining $\theta_j$ as a transformed variable, we can improve the Stan model's computational performance by avoiding directly sampling from $\theta_j$:
+
+```{r everg stan, tidy=TRUE}
+everg_stan <- "
+data {
+  int<lower=0> J; // number of schools
+  real y[J]; // estimated treatment effects
+  real<lower=0> sigma[J]; // s.e. of effect estimates
+}
+parameters {
+  real mu;
+  real<lower=0> tau;
+  real eta[J];
+}
+transformed parameters {
+  real theta[J];
+  for (j in 1:J)
+    theta[j] = mu + tau * eta[j];
+}
+model {
+  eta ~ normal(0, 1);
+  y ~ normal(theta, sigma);
+}
+"
+
+fit1 <- stan_model(model_code = everg_stan)
+```
+
+As usual, we first organize input data and initial values
+
+```{R everg stan exc, tidy=TRUE}
+everg_in <- function(y=y.hat, sig=sigma.hat, n.chains=nchains){
+  J <- length(y)
+  data <- list(y=y, sigma=sig, J=J)
+  inits<-list()
+  for (i in 1:n.chains)
+    inits[[i]] <- list(eta=rnorm(J), mu=rnorm(1), tau=runif(1))
+  pars <- c("theta", "mu", "eta", "tau")
+  return(list(data=data, inits=inits, pars=pars, chains=n.chains))
+}
+
+input.to.stan <- everg_in()
+fit2keep <- sampling(fit1, data=input.to.stan$data,
+                     init=input.to.stan$inits,
+                     pars=input.to.stan$pars,
+                     iter=niters,thin=nthin,
+                     chains=input.to.stan$chains,
+                     control=list(max_treedepth=25))
+
+print(fit2keep)
+
+```
+
+Now processing Stan results
+
+```{R everg stan output, tidy=TRUE, fig.width=3.25, fig.height=4}
+everg_fit1 <- rvsims(as.matrix(
+    as.data.frame(rstan::extract(fit2keep, permuted=T))))
+
+## shrinkage effect
+everg_theta <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                             permuted=T,
+                                                             pars="theta"))))
+everg_mu <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                          permuted=T,
+                                                          pars="mu"))))
+everg_tau <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
+                                                           permuted=T,
+                                                           pars="tau"))))
+theta <- summary(everg_theta)
+mu <- summary(everg_mu)
+tau <- summary(everg_tau)
+
+par(mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
+plot(range(y.hat-1*sigma.hat, y.hat+1*sigma.hat),
+     c(1,length(y.hat)), type="n",
+     xlab="TP Threshold", ylab=" ", axes=F)
+axis(1, cex.axis=0.75)
+axis(2, at=seq(1,length(y.hat)), labels=metrics, las=1, cex.axis=0.75)
+segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
+         y0=seq(1,length(y.hat))-0.125,
+         y1=seq(1,length(y.hat))-0.125,
+         lwd=1, lty=2)
+## col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4),
+segments(x0=theta$"25%", x1=theta$"75%",
+         y0=(seq(1,length(y.hat)))+0.125,
+         y1=(seq(1,length(y.hat)))+0.125)
+##         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+points(x=y.hat, y=seq(1,length(y.hat))-0.125, cex=0.5)
+##       col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4),
+points(x=theta$mean, y=0.125+(seq(1,length(y.hat))), cex=0.5)
+##       pch=16,col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
+abline(v=mu$mean)
+```
+
+How should we determine the TP concentration standard? 
+
+Determining the TP (total phosphorus) concentration standard is primarily an ecological and environmental management decision. From a statistical perspective, the question is whether we should derive the standard based on the overall mean ($\mu$) or consider the distribution of all metrics: between the posterior distribution of $\mu$ and the hyper-distribution.  
+```{R everg env_crit, tidy=TRUE, fig.width=3.25, fig.height=3.5}
+## mu versus N(mu, tau)
+mu_tau <- rvnorm(1, everg_mu, everg_tau)
+p1 <- hist(sims(everg_mu)[,1], freq=F)
+p2 <- hist(sims(mu_tau)[,1], nclass=35)
+
+par(mar=c(3, 3, 1, 0.5), mgp=c(1.25,0.125,0), tck=0.01)
+plot(p1, col=rgb(0.1,0.1,.1,1/4),
+     xlim=c(0,30), ylim=c(0,0.35), freq=F,
+     xlab="TP Threshold ($\\mu$g/L)", main="")  # first histogram
+plot(p2, col=rgb(.7,.7,.7,1/4),
+     xlim=c(0,30), ylim=c(0,0.35), freq=F, add=T)  # second
+box()
+
+c(quantile(sims(everg_mu), prob=0.05), quantile(sims(mu_tau), prob=0.05))
+```
+
