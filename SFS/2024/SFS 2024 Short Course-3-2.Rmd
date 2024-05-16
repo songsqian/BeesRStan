@@ -39,7 +39,7 @@ The EUSE project was briefly introduced in Qian (2016):
 
 One indicator, average tolerance of macroinvertebrate taxa (TOLr), is of particular interest to USGS (Cuffney et al., 2005). The tolerance of a taxon is a measure of whether a taxon can survive in a polluted environment.  In general, taxa with a higher tolerant score can be found in waters with poorer water quality.  As such, the average tolerance scores of the sampled taxa from a water can be used as a biological measure of water quality. Initial analysis suggested that TOLr is linearly associated with watershed urbanization index (USGS' National Urban Intensity Index, NUII).  
 
-```{R euse,tidy=F, fig.width=5, fig.height=5}
+```{R euse,tidy=F, fig.width=5, fig.height=5, dev="tikz"}
 rtol2 <- read.csv(file=paste(dataDIR, "rtolforMS.csv", sep="/"), 
                   header=T)
 
@@ -104,7 +104,7 @@ $$
 $$
 Can be implemented using restricted MLE (using function `lmer` from package `lme4`:
 
-```{R euse lmer,tidy=F, fig.width=3.25, fig.height=5}
+```{R euse lmer,tidy=F, fig.width=3.25, fig.height=5, dev="tikz"}
 euse.lmer1 <- lmer(richtol ~ nuii + (1+nuii|city), data=rtol2)
 display(euse.lmer1, 4)
 
@@ -120,7 +120,7 @@ $$
 represents the exchangeable assumption imposed on the model: we know that model coefficients (intercepts and slopes) are different from city to city (indexed by $j$). But we don't know how the coefficients vary by city, therefore, we assign the same prior distribution on all 9 models. The prior model coefficients ($\mu_{\beta_0}, \mu_{\beta_1}, \Sigma_\beta$) are estimated from the combined data. 
 
 
-```{R euse compare, tidy=F, fig.width=4.5, fig.height=4}
+```{R euse compare, tidy=F, fig.width=4.5, fig.height=4, dev="tikz"}
 ## comparing three linear models
 
 ## No pooling
@@ -166,7 +166,7 @@ $$
 \beta_{0j}\\ \beta_{1j} \end{pmatrix}  \sim  MVN \begin{bmatrix}\begin{pmatrix} a_0+a_1\times T_j\\ b_0+b_1\times T_j\end{pmatrix}, \Sigma_\beta \end{bmatrix}
 $$
 
-```{R euse group-level, tidy=F, width=5.75, height=4}
+```{R euse group-level, tidy=F, width=5.75, height=4, dev="tikz"}
 euse.lmer2 <- lmer(richtol ~ nuii + temp.full + nuii:temp.full +
                      (1+nuii|city), data=rtol2)
 M2.coef <- coef (euse.lmer2)
@@ -210,7 +210,7 @@ $$
 \beta_{0j}\\ \beta_{1j} \end{pmatrix}  \sim  MVN \begin{bmatrix}\begin{pmatrix} a_0+a_1\times Ag_j\\ b_0+b_1\times Ag_j\end{pmatrix}, \Sigma_\beta \end{bmatrix}
 $$
 
-```{R euse group-level 2, tidy=F, width=5.75, height=4}
+```{R euse group-level 2, tidy=F, width=5.75, height=4, dev="tikz"}
 euse.lmer3 <- lmer(richtol ~ nuii+ag.full+nuii:ag.full+
                      (1+nuii|site), data=rtol2)
 display(euse.lmer3, 4)  ## display no plonger works for lmer
@@ -256,7 +256,7 @@ $$
 \beta_{0j}\\ \beta_{1j} \end{pmatrix}  \sim  MVN \begin{bmatrix}\begin{pmatrix} a_0+a_1\times T_j +a_2\times Ag_j\\ b_0+b_1\times T_j+b_2\times Ag_j\end{pmatrix}, \Sigma_\beta \end{bmatrix}
 $$
 
-```{R euse group-level 3, tidy=F, width=5.75, height=4}
+```{R euse group-level 3, tidy=F, width=5.75, height=4, dev="tikz"}
 ag.cat2 <- ag.full>0.5
 
 euse.lmer4 <- lmer(richtol ~ nuii+temp.full+nuii:temp.full+
@@ -364,7 +364,7 @@ model {
 
 We demonstrate Stan implementations of linear BHM.
 
-```{R euse stan 1, tidy=F}
+```{R euse stan 1, tidy=F, dev="tikz"}
 euse_stan1 <- "
 data {
   int<lower=0> N;
@@ -425,7 +425,7 @@ print(fit2keep)
 
 Now processing Stan output using `rv`
 
-```{R euse stan 2, tidy=F}
+```{R euse stan 2, tidy=F, dev="tikz"}
 ## EUSE no group-level predictor
 euse_multilevel1 <- rvsims(as.matrix(as.data.frame(
     rstan::extract(fit2keep, pars=c("beta","mu_b",
@@ -711,7 +711,7 @@ euse_multilevel3 <- rvsims(as.matrix(as.data.frame(
 
 We don't have warnings for this model. We now use the output to generate the same plot we see before:
 
-```{R euse Stan figures, tidy=F, height=3, width=5}
+```{R euse Stan figures, tidy=F, height=3, width=5, dev="tikz"}
 beta_rv <- summary(rvmatrix(euse_multilevel3[1:18], nrow=9))
 gamma_rv <- summary(rvmatrix(euse_multilevel3[19:24], nrow=3))
 gr <- input.to.stan$data$gr

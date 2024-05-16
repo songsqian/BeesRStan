@@ -10,6 +10,8 @@ editor_options:
 
 ```{r setup, include=FALSE}
 source("Front.R")
+packages(lme4)
+packages(lattice)
 ```
 ## Introductory Examples 
 
@@ -21,16 +23,16 @@ The guiding principle for Bayesian applications in environmental and ecological 
 1. A parameter vector that defines the distribution model, where some parameters reflect features of the system under study.
 1. The inclusion or representation of the data-generating process.
 
-Of these criteria, the last one, the data-generating process, holds significant importance. Our aim is to develop models that are relevant to the problem at hand and reflect likely causal relationships rather than mere correlations. Furthermore, environmental and ecological data are often observational, meaning we collect the data without prior knowledge of the appropriate model or method for analysis. The statistics we learned in graduate school typically assume that we already know the correct model. We teach statistics chapter by chapter, assuming that we have the right model in mind. However, when working with data from environmental and ecological monitoring programs, we often start collecting data without a clear idea of the questions we want to answer. For instance, most of the data used in studying the effects of climate change were collected without specific hypotheses in mind. In our opinion, analyzing environmental/ecological data often begins with identifying the problem to be addressed. Since all models are inherently wrong (yet some are useful), our focus lies in determining how and when a flawed model can be useful and in what way.
+Of these criteria, the last one, the data-generating process, holds significant importance. Cox's term "data generating process" represents a statistical abstraction of how the data were physically obtained. Our aim is to develop models that are relevant to the problem at hand and reflect likely causal relationships rather than mere correlations. Furthermore, environmental and ecological data are often observational, meaning we collect the data without prior knowledge of the appropriate model or method for analysis. The statistics we learned in graduate school typically assume that we already know the correct model. We teach statistics chapter by chapter, assuming that we have the right model in mind. However, when working with data from environmental and ecological monitoring programs, we often start collecting data without a clear idea of the questions we want to answer. For instance, most of the data used in studying the effects of climate change were collected without specific hypotheses in mind. In our opinion, analyzing environmental/ecological data often begins with identifying the problem to be addressed. Since all models are inherently wrong (yet some are useful), our focus lies in determining how and when a flawed model can be useful and in what way.
 
 We have found the following process to be effective in analyzing environmental/ecological data:
 
 1. Exploratory analysis using many plots
-1. Start with simple models that can be readily implemented in R.
+1. Start with simple models that can be readily implemented in R (i.e., classical models).
 1. Explore the model fit and identify its weaknesses using the concept of "posterior simulation." This involves using the fitted model to predict what we want to learn and compare it with what we already know.
 1. Based on the identified weaknesses, reformulate the model to address those shortcomings.
 1. Implement the model in Stan to further assess problems such as computational stability and identifiability (e.g., the snake fungal disease example with unknown error rates).
-1. Repeat the posterior simulation to determine where and when the model is useful.
+1. Repeat the posterior simulation to determine where/when the model is useful.
 
 By following this iterative process, we can refine our models, understand their limitations, and identify their utility in analyzing environmental and ecological data.
 
@@ -87,7 +89,7 @@ $$
 \theta_k \sim N(\mu_{hyp}, \sigma^2_{hyp})
 $$
 
-```{R gom model 1, tidy=TRUE}
+```{R gom model 1, tidy=F}
 ## Station: core,
 ## Area: zone
 stan1_gom <- " 
@@ -139,7 +141,7 @@ We used a `generated quantities` code block to directly calculate the difference
 
 Now organizing input data and run the model
 
-```{R gom run m1, tidy=TRUE}
+```{R gom run m1, tidy=F}
 stan.in3 <- function(data = benthic.data, y.col=5,  ## richness
                      chains=nchains){ ## no slope
     n <- dim(data)[1]
@@ -200,7 +202,7 @@ names(delta0R) <- c("H-I","H-O","I-O")
 names(delta0A) <- c("H-I","H-O","I-O")
 ```
 
-We noticed warning messages about divergence transition. It is a sign of computational difficulties in sampling the posterior distribution.
+We noticed warning messages about divergent transition. It is a sign of computational difficulties in sampling the posterior distribution.
 
 ```{R gom m1 Neals funnel, tidy=TRUE, fig.height=3, fig.width=5, dev="tikz"}
 par(mfrow=c(1,2),mar=c(3,3,1,1),
@@ -580,3 +582,5 @@ abline(v=0)
 
 ```
 
+## Summary
+In this example, we fit the same data with one MLE and three different Bayesian models. The MLE model inadequately fits the data providing little information on the zone difference, but the summary statistics do not provide insight on where/if the model has gone wrong. Using the first Bayesian model, we see through the presence of Neal's Funnel, that the model is having trouble estimating the upper level parameters. Even when we reparameterize the model to aid convergence, Neal's funnel persists. The example demonstrates that the data we have are not guaranteed to support the complexity of a model we desire.  Compromize is necessary.  In this case, we simplified the hierarchical structure, assuming exchangeability across cores,and reparameterized the two alternative models to improve convergence efficiency and reduced estimation uncertainty. The two alternative models allow us to make inferences about the impact of hypoxia on species richness and abundance.

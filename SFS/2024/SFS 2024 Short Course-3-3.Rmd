@@ -10,6 +10,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 source("Front.R")
+packages(arm)
 
 line.plots <- function(est, se, yaxis=NULL, hline=0, HL=T, 
                        oo=NULL, Outer=F, xloc=1, yaxisLab=NULL, ...){
@@ -71,7 +72,7 @@ CB_data$Wetland[substring(CB_data$Type, 2, 2)!="W"] <- 0
 
 First, we examine the interpretation of model coefficients using the concept of exchangeability. The model described in the previous equation is inherently a model for individual water bodies. Therefore, when fitting the model using combined data from lakes, reservoirs, and wetlands, we are combining nonexchangeable units and exposing ourselves to Simpson's paradox. To illustrate this, we fit the same model using the combined data from lakes, reservoirs, and wetlands, and compare the resulting model coefficients with the coefficients obtained from fitting the same model to the data from lakes, reservoirs, and wetlands separately. Interestingly, the slope estimated using the combined data is significantly lower than the slopes estimated using the data from the three types of water bodies separately:
 
-```{R, tidy=TRUE, fig.width=4, fig.height=3.75}
+```{R, tidy=TRUE, fig.width=4, fig.height=3.75, dev="tikz"}
 ## all data
 lm1_all_CSTR <- lm(log(k_TP_CSTR) ~ log(HRT_tau), data=CB_data,
               subset=k_TP_CSTR>0)
@@ -124,7 +125,7 @@ By considering the concept of exchangeable units, we acknowledge that observatio
 
 The results reveal interesting patterns. The slopes estimated for the smallest and largest wetlands are not significantly different from 0 (although larger than the slope estimated using the combined wetland data). In contrast, the slopes of the four intermediate-sized wetlands either exhibit high uncertainty (e.g., wetland 514) or are notably smaller than the slope estimated using the combined wetland data.
 
-```{R, tidy=TRUE, fig.height=3.75, fig.width=4}
+```{R, tidy=TRUE, fig.height=3.75, fig.width=4, dev="tikz"}
 CB_wetland <- CB_data[CB_data$Wetland==1,]
 CB_wetland$sites <- as.numeric(CB_wetland$Year)
 ## we determined that Year was mislabeled

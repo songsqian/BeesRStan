@@ -16,12 +16,15 @@ packages(mapproj)
 
 ```
 
+## Introduction
+In this example we explore the benefits of aggregation. Aggregating data during the modeling process relies on an assumption of exchangeability among units. Aggregating data into units depends on our objective knowledge (what we know), subjective ignorance (what we don't know), and the objectives of the study. The basic tenet of the exchangeability assumption is that we acknowledge there are likely differences among units, but we don't know the source of these differences... yet. Assuming exchangeability among units also improves estimation performance as demonstrated by Stein's paradox and avoids the trappings of Simpson's paradox.
+
 ## Hierarchical Models 
 A simple start -- setting environmental standard in the Everglades
 
 Richardson et al. (2007) conducted a mesocosm study in the Everglades of South Florida to investigate the response of wetland ecosystems to elevated phosphorus (P) input. They created a phosphorus gradient using artificial flumes and observed changes in the mesocosm ecosystem. The researchers determined the thresholds of total phosphorus (TP) concentrations that would lead to significant changes in algae, macroinvertebrates, and macrophytes communities. To quantify these thresholds, they utilized 12 biological indicators that represented how quickly the indicators would respond to changes in TP concentrations. The study reported the means of the 12 thresholds along with their corresponding 95% confidence intervals. In our analysis, we employed the 95% confidence intervals (typically calculated as the mean plus/minus 2 standard errors) to estimate the standard deviation of the mean thresholds.
 
-```{R everg data, tidy=TRUE, fig.width=3.25, fig.height=4}
+```{R everg data, tidy=TRUE, fig.width=3.25, fig.height=4, dev="tikz"}
 y.hat <- c(19.2,  13,  13, 12.4, 8.2, 19.9, 18.3,
            15.6, 14.8, 14.5, 23.5, 15.3)
 sigma.hat <- c( 1.6, 6.4, 9.6, 16.2, 0.8,  4.2,  1.2,
@@ -37,7 +40,7 @@ metricsTEX <- c("Mat Cover","BCD","\\% Tol Sp",
                 "\\% diatom (stem)","\\% diatom (plexi)",
                 "\\% diatom (mat)")
 
-par(mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
+par(mfrow=c(1,1), mar=c(3, 7, 1, 0.5), mgp=c(1.25,0.25,0),tck=0.01)
 plot(range(y.hat-2*sigma.hat, y.hat+2*sigma.hat),
      c(1,length(y.hat)), type="n",
      xlab="TP Threshold", ylab=" ", axes=F)
@@ -66,13 +69,13 @@ The estimated mean and standard deviation, $\hat{\phi}_j$ and $\hat{\sigma}_j$, 
 $$
 \theta_j \sim N(\mu, \tau^2),
 $$
-which represents a common prior distribution for $\theta_j$. This hierarchical model extends the concept of Stein's paradox from the 1960s. With 12 thresholds to estimate simultaneously, Stein's paradox informs us that estimating them individually is mathematically inadmissible. By shrinking the individually estimated means towards the overall mean, we can improve the accuracy of the overall estimation. Hierarchical modeling has shown its value in applied fields since Stein's paradox, particularly in addressing environmental and ecological data analysis problems that involve variables representing different levels of spatial, temporal, and organizational aggregations. Failing to properly address data hierarchy can lead to Simpson's paradox. 
+which represents a common prior distribution for $\theta_j$. This hierarchical model extends the concept of Stein's paradox from the 1960s. With 12 thresholds to estimate simultaneously, Stein's paradox informs us that estimating them individually is mathematically inadmissible. By shrinking the individually estimated means towards the overall mean, we can improve the accuracy of the overall estimation. Hierarchical modeling has shown its value in applied fields since Stein's paradox, particularly in addressing environmental and ecological data analysis problems that involve variables representing different levels of spatial, temporal, and organizational aggregations. Failing to properly address data hierarchy can lead to Simpson's paradox - where patterns in the data are different between pooled and aggregate units. 
 
 The common prior distribution used in the Everglades problem reflects two key considerations: (1) our understanding that the $\theta_j$ values are likely to differ across different metrics, and (2) our lack of understanding regarding the specific differences between the $\theta_j$ values. The variance parameter $\tau^2$ represents the between-metric variance. In this context, we expanded the meaning of $\tau^2$ to encompass the variance among all possible metric means, not just the 12 metrics represented in the available data. This hierarchical model connects all metrics together through the common prior distribution $N(\mu,\tau^2)$.
 
-Since we have no prior knowledge about the values of $\mu$ and $\tau^2$, we will utilize Stan default weakly informative priors. From the perspective of modeling individual metrics, each time we model a metric mean (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$), we employ Bayesian estimation and assign a prior distribution to the unknown metric mean $\theta_j$. In this case, the prior distribution parameters are estimated based on data from other metrics. If we have an additional metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation utilizing an informative prior. This informative prior is derived from other similar quantities. This interpretation leads to the concept of treating a prior as the distribution of similar quantities, known mathematically as exchangeable units. Studies involving similar quantities from different contexts, such as eutrophication studies in various lakes, are often referred to as parallel studies. Exchangeable units can pertain to spatial aspects (e.g., different lakes, distinct eco-regions when studying climate change impacts), temporal aspects (observations from the same location over different seasons or years), and, as illustrated in this example, organizational aspects (different metrics representing various aspects of an ecosystem). I believe that any environmental and ecological data analysis problem can be approached as a hierarchical modeling problem, considering the inherent hierarchical structure of the data.
+Since we have no prior knowledge about the values of $\mu$ and $\tau^2$, we will utilize Stan default weakly informative priors. From the perspective of modeling individual metrics, each time we model a metric mean (i.e., $\hat{\phi}_j \sim N(\theta_j, \hat{\sigma}^2_j)$), we employ Bayesian estimation and assign a prior distribution to the unknown metric mean $\theta_j$. In this case, the prior distribution parameters are estimated based on data from other metrics (Empirical Bayes). If we have an additional metric, the hierarchical model for the 13th metric can be seen as a Bayesian estimation utilizing an informative prior. This informative prior is derived from other similar quantities. This interpretation leads to the concept of treating a prior as the distribution of similar quantities, known mathematically as exchangeable units. Studies involving similar quantities from different contexts, such as eutrophication studies in various lakes, are often referred to as parallel studies. Exchangeable units can pertain to spatial aspects (e.g., different lakes, distinct eco-regions when studying climate change impacts), temporal aspects (observations from the same location over different seasons or years), and, as illustrated in this example, organizational aspects (different metrics representing various aspects of an ecosystem). I believe that any environmental and ecological data analysis problem can be approached as a hierarchical modeling problem, considering the inherent hierarchical structure of the data.
 
-Returning to the Everglades example, we can observe the well-known shrinkage effect of hierarchical modeling, which is responsible for enhancing overall estimation accuracy. Let's provide an intuitive explanation of why shrinking estimates towards the overall mean leads to improved accuracy. When we say that an estimate has an error, we mean that the estimated value is either too high or too low. However, when we have only one parameter to estimate, we have no basis to believe that the estimate is biased towards being too high or too low. Thus, an unbiased estimator is preferred, as, on average, it tends to be correct.
+Returning to the Everglades example, we can observe the well-known shrinkage effect of hierarchical modeling, which is responsible for enhancing overall estimation accuracy. Let's provide an intuitive explanation of why shrinking estimates towards the overall mean leads to improved accuracy (i.e., Stein's paradox). When we say that an estimate has an error, we mean that the estimated value is either too high or too low. However, when we have only one parameter to estimate, we have no basis to believe that the estimate is biased towards being too high or too low. Thus, an unbiased estimator is preferred, as, on average, it tends to be correct.
 
 When we have estimates of the same parameter from multiple exchangeable units, the overall mean of these estimates serves as a reasonable reference to gauge whether an individual estimate is likely to be too high or too low. Consequently, shrinking these estimates towards the overall mean is more likely to improve their accuracy.
 
@@ -84,7 +87,7 @@ $$
 $$
 By defining $\theta_j$ as a transformed variable, we can improve the Stan model's computational performance by avoiding directly sampling from $\theta_j$:
 
-```{r everg stan, tidy=TRUE}
+```{r everg stan, tidy=TRUE, message=F}
 everg_stan <- "
 data {
   int<lower=0> J; // number of schools
@@ -140,7 +143,7 @@ print(fit2keep)
 
 Now processing Stan results
 
-```{R everg stan output, tidy=TRUE, fig.width=3.25, fig.height=4}
+```{R everg stan output, tidy=TRUE, fig.width=3.25, fig.height=4, dev="tikz"}
 everg_fit1 <- rvsims(as.matrix(
     as.data.frame(rstan::extract(fit2keep, permuted=T))))
 
@@ -183,7 +186,7 @@ abline(v=mu$mean)
 How should we determine the TP concentration standard? 
 
 Determining the TP (total phosphorus) concentration standard is primarily an ecological and environmental management decision. From a statistical perspective, the question is whether we should derive the standard based on the overall mean ($\mu$) or consider the distribution of all metrics: between the posterior distribution of $\mu$ and the hyper-distribution.  
-```{R everg env_crit, tidy=TRUE, fig.width=3.25, fig.height=3.5}
+```{R everg env_crit, tidy=TRUE, fig.width=3.25, fig.height=3.5, dev="tikz"}
 ## mu versus N(mu, tau)
 mu_tau <- rvnorm(1, everg_mu, everg_tau)
 p1 <- hist(sims(everg_mu)[,1], freq=F)
@@ -200,3 +203,5 @@ box()
 c(quantile(sims(everg_mu), prob=0.05), quantile(sims(mu_tau), prob=0.05))
 ```
 
+## Summary
+In this example we introduced several new terms: exchangeability, objective knowledge, subjective ignorance, Stein's paradox, Simpson's paradox, and Empirical Bayes. One benefit of the iterative Bayesian modeling approach we advocate, is that each of these concepts can be explicitly acknowledged and addressed through the modeling process. And we believe, particularly with large scale cross sectional data, will result in improved models tuned to the studies objectives.

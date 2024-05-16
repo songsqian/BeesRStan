@@ -9,19 +9,23 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-source("front.R")
+source("Front.R")
 load("From1_1.RData")
 ```
 
 ## Why Bayesian?
-With Stan, Bayesian inference can be readily applied to more complex problems that are impossible for classical MLE. More importantly, Bayesian inference using Stan can provide useful information on model formulation to identify potential problems. Bayesian inference is also the best approach for information accumulation.
+
+With Stan, Bayesian inference can be readily applied to more complex problems that are impossible for classical MLE. More importantly, Bayesian inference using Stan can provide useful information on model formulation to identify potential problems. Bayesian inference is also the best approach for information accumulation. These benefits facilitate an iterative modeling process allowing feedback between the problems of model formulation, estimation, and evaluation.
+
+![Figure 1.5 of Qian, DuFour, Alammedine, 2022)](feeloop.png)
 
 ### Information accumulation
-Suppose that we conducted a new survey of the snake fungal disease a year after the initial study to update the prevalence. Or, we may want to evaluate the temporal trend of the disease prevalence in the subsequent years. 
 
-All the methods we used resulted in a consistent estimate of the prevalence of about 22% with a wide range of between 0.07-0.4. The uncertainty is a result of the small sample size. Suppose that we now have a new sample of $n_2=12$ and $y_2=4$. Using classical statistics, we either estimate the prevalence using only the second sample, assuming that the prevalence has changed or combine the data (i.e., $n=32$ and $y=9$), assuming the population stays the same. 
+Suppose that we conducted a new survey of the snake fungal disease a year after the initial study to update the prevalence. Or, we may want to evaluate the temporal trend of the disease prevalence in the subsequent years.
 
-With a Bayesian approach, we can summarize the posterior of $\theta$ from the first sample to form a prior of $\theta$ and update the prior using the new data. We typically use a beta distribution to summarize the distribution of a probability. Given the mean and standard deviation of 0.23 and 0.11 (from the Stan model), we propose a beta distribution with parameters $\alpha= 3.52$ and $\beta= 11.56$ (based on the method of moments). The prior can also be from similar studies elsewhere. All we need is an estimate of the mean and a likely range. We can treat the likely range as the usual 95% confidence interval (roughly 4 times standard deviation), from which derive a rough estimate of the standard deviation.  
+All the methods we used resulted in a consistent estimate of the prevalence of about 22% with a wide range of between 0.07-0.4. The uncertainty is a result of the small sample size. Suppose that we now have a new sample of $n_2=12$ and $y_2=4$. Using classical statistics, we either estimate the prevalence using only the second sample, assuming that the prevalence has changed or combine the data (i.e., $n=32$ and $y=9$), assuming the population stays the same.
+
+With a Bayesian approach, we can summarize the posterior of $\theta$ from the first sample to form a prior of $\theta$ and update the prior using the new data. We typically use a beta distribution to summarize the distribution of a probability. Given the mean and standard deviation of 0.23 and 0.11 (from the Stan model), we propose a beta distribution with parameters $\alpha= 3.52$ and $\beta= 11.56$ (based on the method of moments). The prior can also be from similar studies elsewhere. All we need is an estimate of the mean and a likely range. We can treat the likely range as the usual 95% confidence interval (roughly 4 times standard deviation), from which derive a rough estimate of the standard deviation.
 
 ```{R, tidy=TRUE}
 ybar <- mean(stan_out$theta)
@@ -32,7 +36,7 @@ beta0 <- alpha0*(1-ybar)/ybar
 alpha0+beta0
 ```
 
-Once the initial estimates of $\alpha_0$ and $\beta_0$ are available, we can further revise the estimate based on our assessment of the relevancy of the prior to our data at hand.  For example, the relevancy of the prior may be measured by $\alpha+\beta$ if we interpret the sum as the sample size from which the prior was derived. For example, $\alpha_0+\beta_0=15$, somewhat smaller than the sample size we used (20), perhaps, because of the imperfect detection of the qPCR method. If we want to weight the prior less than 15 data points, we can rescale the prior parameter by setting $\alpha_0+\beta_0=n_0$ while keeping $\alpha_0/(\alpha_0+\beta_0)$ the same (equals to $\bar{y}$).
+Once the initial estimates of $\alpha_0$ and $\beta_0$ are available, we can further revise the estimate based on our assessment of the relevancy of the prior to our data at hand. For example, the relevancy of the prior may be measured by $\alpha+\beta$ if we interpret the sum as the sample size from which the prior was derived. For example, $\alpha_0+\beta_0=15$, somewhat smaller than the sample size we used (20), perhaps, because of the imperfect detection of the qPCR method. If we want to weight the prior less than 15 data points, we can rescale the prior parameter by setting $\alpha_0+\beta_0=n_0$ while keeping $\alpha_0/(\alpha_0+\beta_0)$ the same (equals to $\bar{y}$).
 
 We now need additional data for the model:
 
@@ -121,7 +125,8 @@ Pr(theta>prior)
 ```
 
 ### Realistic modeling
-Most likely, we don't know exactly the values of $f_p$ and $f_n$. But we may have prior knowledge on their likely values, from which we can derive prior distributions of $f_p$ and $f_n$. For example, the values $f_p=0.07$ and $f_n=0.05 are estimated from similar tests elsewhere based on over 50 tests. We can use the beta distribution to quantify the prior knowledge:
+
+Most likely, we don't know exactly the values of $f_p$ and $f_n$. But we may have prior knowledge on their likely values, from which we can derive prior distributions of $f_p$ and $f_n$. For example, the values $f_p=0.07$ and $f_n=0.05$ are estimated from similar tests elsewhere based on over 50 tests. We can use the beta distribution to quantify the prior knowledge:
 
 ```{R, tidy=TRUE}
 a_p <- 0.07*50
@@ -199,7 +204,8 @@ quantile(stan_out$theta, prob=c(0.05,0.95))
 ```
 
 ### Identifiability
-What happens if we have no prior information of $f_p$ and $f_n$? We could try to use non-informative prior $beta(1,1)$ (uniform between 0 and 1). However, it is unlikely that we can simultaneously identify all three parameters. Mathematically, information in the data is represented in the likelihood function, consisting of products of $\theta f_p$ and $\theta f_n$. In other words, the data have information of the two products. To definitely separate them, we need additional information.  If we try because we can, Stan will let us know that something is wrong.
+
+What happens if we have no prior information of $f_p$ and $f_n$? We could try to use non-informative prior $beta(1,1)$ (uniform between 0 and 1). However, it is unlikely that we can simultaneously identify all three parameters. Mathematically, information in the data is represented in the likelihood function, consisting of products of $\theta f_p$ and $\theta f_n$. In other words, the data have information of the two products. To definitely separate them, we need additional information. If we try because we can, Stan will let us know that something is wrong.
 
 ```{R snake identity crisis, tidy=TRUE, fig.width=4.5, fig.height=4.5}
 input.to.stan <- input_snake3(alpha=alpha0, beta=beta0, ap=1, an=1, bp=1, bn=1)
@@ -244,12 +250,12 @@ rvhist(theta, xlab="$\\theta$", main="")
 quantile(stan_out$theta, prob=c(0.05,0.95))
 ```
 
-Examine the marginal distributions is not enough.
+Examining the marginal distributions is not enough.
 
 ## Summary
-Using Stan in R is a natural way for implementing Bayesian modeling.  Writing the Stan model requires us explicitly formulate a model, identify parameters of interest, and provide any prior information we have on the parameters. The strong diagnostic feature of Stan provides more information for model evaluation. A typical Bayesian inference workflow starts with writing down the response variable model (what is the likely probability distribution model and how the mean parameter relates to predictors). From the likelihood function, we identify parameters of interest and relevant prior information.  We then organize all available information into three basic blocks (data, parameters, and model) to construct the Stan model code. Because the MCMC algorithm in Stan is constructed through a function proportional to the log-posterior density, the log-likelihood function in a Stan model does not have to be based on a known distribution function (e.g., the normal distribution).   
+
+Using Stan in R is a natural way for implementing Bayesian modeling. Writing the Stan model requires us to explicitly formulate a model, identify parameters of interest, and provide any prior information we have on the parameters. The strong diagnostic feature of Stan provides more information for model evaluation. A typical Bayesian inference workflow starts with writing down the response variable model (what is the likely probability distribution model and how the mean parameter relates to predictors). From the likelihood function, we identify parameters of interest and relevant prior information. We then organize all available information into three basic blocks (data, parameters, and model) to construct the Stan model code. Because the MCMC algorithm in Stan is constructed through a function proportional to the log-posterior density, the log-likelihood function in a Stan model does not have to be based on a known distribution function (e.g., the normal distribution).
 
 ## Computational Notes -- Using Package `rv`
 
 See [cran rv vignette](https://jsta.github.io/rv/articles/rv-doc.html)
-

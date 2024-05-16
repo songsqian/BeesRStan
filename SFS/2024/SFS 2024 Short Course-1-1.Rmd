@@ -36,7 +36,16 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 
 ```
 ## Introduction
-Statistical Inference Mode: This mode, proposed by Fisher in 1921, involves three fundamental "problems" in statistical inference:
+
+Classical statistics, typically taught in universities, were largely based on Neyman-Pearson's "inductive behavior" approach, which turns an inductive inference problem to a deductive process.  According to Fisher (1922), the inductive nature of statistical inference (we observe data and which to infer the cause) should be approached using **hypothetical deduction**. That is, we propose a hypothesis and derive its logical outcome. Based on the hypothesis, we design an experiment with varied treatments and measure the effect. By comparing the observed results against the predicted (logical outcome) we conclude whether the data is consistent with the initial hypothesis.  The consistency is measured by the *p*-value, the smaller the *P*-value the less consistent is the data with the hypothesis. Under Fisher's hypothetical deduction approach, we propose one hypothesis and revise it when the resulting *p*-value is small.  Under the Neyman-Pearson's inductive behavior approach we compare the null and alternative hypotheses and decide which one to accept.  This approach is predicated on rejecting or failing to reject a hypothesis. In Neyman-Pearson's own words, there is no "hope of knowing whether each separate hypothesis is true or false." 
+
+In ecological research, we are more interested in estimation.  For example, when using a *t*-test, we are not interested in whether the null hypothesis of no difference is true. It is always false (at least we believe so, otherwise we can't justify the grant behind the experiment). What we really want to know is the magnitude of the difference. Estimation is the main interest. Consequently, Fisher's hypothetical deduction approach and the Bayesian approach are more relevant to ecologists. 
+
+The Fisherian and the Bayesian approaches often lead to similar results in many simple problems.  Classical statisticians' emphasis on the accessibility of their methods to practitioners led to a vast collection of fast computation algorithms for a large number of statistical models.  As a result, using statistics is often as simple as pickinbg a model and plug data into a computer program (R functions).  At the same time, the computational difficulty of the Bayesian approach limited its use in only a few very simple situations.  As a result, Bayesian statistics is not taught in graduate schools.  With the advent of Markov chain Monte Carlo (MCMC) simulation methods, many computational problems associated with Bayesian statistics disappeared.  With MCMC, we can analyze problems that cannot be easily resolved using available classical statistics models.
+
+### The process of Statistical Inference 
+
+According to Fisher (1922), statistical inference involves resolving three fundamental "problems:"
 
 1. Problem of Formulation: This problem pertains to determining the probability distribution of the response variable.
 
@@ -44,7 +53,8 @@ Statistical Inference Mode: This mode, proposed by Fisher in 1921, involves thre
 
 1. Problem of Distribution: This problem involves evaluating the model's fit and performance (quantify estimation uncertainty).
 
-A Mathematical Summary of Statistical Inference:
+![](feeloop.png)
+### A Mathematical Summary of the Problem of Estimation
 
 - Probability Distribution Density Function: The density function of the response variable, denoted as $\pi(y, \theta)$.
 
@@ -88,7 +98,7 @@ $$
 - `Stan` via `rstan` in R:
   - The `Stan` program implements the MCMC algorithm when the logarithm of the prior $\log\left(\pi(\theta)\right)$ and the logarithm of the likelihood function $\log\left(L(\theta;y_i)\right)$ are provided.
 
-### Example -- Snake Fungal Disease
+## Example -- Snake Fungal Disease
 - Estimating the prevalence of fungal infection in a population of protected snake species in Michigan
   - qPCR test with false positive rate (probability) $f_p$ and false negative rate $f_n$.
   - In a sample of $n$ snakes, $y$ tested positive
@@ -151,7 +161,6 @@ theta_med <- theta_seq[post_theta$cdf-0.5==min(abs(post_theta$cdf-0.5))]
 theta_CI <- c(theta_seq[post_theta$cdf-0.05==min(abs(post_theta$cdf-0.05))], 
               theta_seq[post_theta$cdf-0.95==min(abs(post_theta$cdf-0.95))])
 ```
-
   - Bayesian 2: Monte Carlo simulation
   
     Directly draw random numbers from the posterior distribution using the inverse-CDF method
@@ -214,7 +223,7 @@ median(theta)
 quantile(theta, prob=c(0.05,0.95))
 ```
 
-## Stan using `rstan`
+### Stan through `rstan`
 
   - Bayesian 4: Using Stan
 
@@ -349,3 +358,11 @@ quantile(stan_out$theta, prob=c(0.05,0.95))
 ## Saving output for the next session
 save ("stan_out", file="From1_1.RData")
 ```
+
+## Summary
+In this section we compared and contrasted Classical and Bayesian methods, fit a simple model using both, and translated that model to Stan code. Learning objectives include:
+
+  - An emphasis on parameter estimation using Bayesian approach.
+  - Bayesian methods using Monte Carlo simulations to estimate parameters.
+  - Stan provides a tool that overcomes the computational challenges of integration and allows flexible model formulation.
+  

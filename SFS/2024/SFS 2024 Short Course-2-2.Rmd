@@ -9,12 +9,12 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-source(Front.R)
+source("Front.R")
 
 ```
 
 ### Example 2 -- Zero-Inflation or Not?
-In this example, we introduce the concept of Bayesian posterior simulation for model evaluation.
+In this example, we introduce the concept of Bayesian posterior simulation for model evaluation using a scenario often encountered in ecological data.
 
 Incidental Catch in Fisheries example (Hilborn and Mangel, 1997. *Ecological Detective*) aimed to determine the minimum sample size of "statistically meaningful data" required to estimate the mean bycatch rate with a limited level of uncertainty. The original study (Bartle, 1991) used Central Limit Theorem-based confidence intervals to define an acceptable level of uncertainty. The goal was to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) utilized the negative binomial distribution to describe the bycatch data, where the response variable is the bycatch count, a count variable taking only non-negative integer values.
 
@@ -139,14 +139,14 @@ NB_coef <- rvsims(as.matrix(as.data.frame(NB_stanout)))
 means <- c(Pois_coef[1], NB_coef[1])
 names(means) <- c("$\\lambda_{pois}$", "$\\mu_{nb}$")
 
-par(mgp=c(1.25,0.25,0), tck=-0.01)
+par(mfrow=c(1,1), mgp=c(1.25,0.25,0), tck=-0.01)
 mlplot(means, xlab="Estimated mean by-catch per tow")
 
 ```
 
 Posterior simulation -- using the fitted model to replicate the data repeatedly
 
-```{R bycatch post_sim, fig.height=3, fig.width=5, tidy=TRUE}
+```{R bycatch post_sim, fig.height=3, fig.width=5}
 ## simulations
 nsims <- length(Pois_stanout$lambda)
 n <- length(zippos)+zip0
@@ -225,7 +225,7 @@ abline(v=sd(c(rep(0,zip0),zippos)))
 
 The Poisson model cannot replicate the variance and the fraction of zeros of the data. The data are zero inflated if the Poisson model is used. 
 
-**Zero-Inflated** count data models
+### **Zero-Inflated** count data models
 
 The zero-inflated model is designed to handle count data that exhibits excess zeros. Under certain conditions, the observations are always 0 (true zero). For example, there were no sea birds present.  Without knowing the conditions, we must treat observed 0s as a combination of true zeros and 0s resulted from, for example, the imperfect sampling method (i.e., bycatch happened but failed to observe).  Assuming that the chance of sampling a true 0 is $\theta$ (and a probability of $1-\theta$ sampling a Poisson counts).  The probability of observing any outcome $y_i$ is defined as follows:
 - The probability of observing 0 is given by 
@@ -276,7 +276,7 @@ The R package `pscl` implements the MLE of the Lambert ZIP model.
 
 Fitting the models:
 
-```{R bycatch zero infl, tidy=TRUE}
+```{R bycatch zero infl}
 zip_bycatch <-"
 data{
   int<lower=1> n0;
@@ -389,7 +389,7 @@ Strong correlation in the zinb model indicating non-identifiability. Additional 
 
 Making comparisons
 
-```{R bycatch comps, tidy=TRUE}
+```{R bycatch comps}
 zinb_coef <- as.data.frame(extract(keep_zinb, permute=T,
                                    pars=c("theta","mu","r")))
 zip_coef <- as.data.frame(extract(keep_zip, permute=T,
@@ -459,3 +459,5 @@ abline(v=s)
 
 ```
 
+## Summary
+In this example, we fit two common distributions (Poisson and Negative binomial) to model count data. In the first portion, we see that the Poisson model is not able to replicate important characteristics of the data while the negative binomial performs well. Increasing model complexity by acocunting for zero-inflation improves the fit of both models, however, the ZINB model is not identifiable without additional information about theta. This exposes a bit of a model complexity trap, and highlights the importance of model evaluation to identify the most parsimonious approach.
