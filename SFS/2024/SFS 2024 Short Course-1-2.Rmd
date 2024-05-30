@@ -1,10 +1,13 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -15,7 +18,7 @@ load("From1_1.RData")
 
 ## Why Bayesian?
 
-With Stan, Bayesian inference can be readily applied to more complex problems that are impossible for classical MLE. More importantly, Bayesian inference using Stan can provide useful information on model formulation to identify potential problems. Bayesian inference is also the best approach for information accumulation. These benefits facilitate an iterative modeling process allowing feedback between the problems of model formulation, estimation, and evaluation.
+With Stan, Bayesian inference can be readily applied to more complicated problems that are impossible for classical MLE. More importantly, Bayesian inference using Stan can provide useful information on model formulation to identify potential problems. Bayesian inference is also the best approach for information accumulation. These benefits facilitate an iterative modeling process allowing feedback between the problems of model formulation, estimation, and evaluation.
 
 ![Figure 1.5 of Qian, DuFour, Alammedine, 2022)](feeloop.png)
 
@@ -83,15 +86,16 @@ input_snake2 <- function(n=12, y=5, alpha, beta, nchns=nchains){
 input.to.stan <- input_snake2(alpha=alpha0, beta=beta0)
 fit2keep <- sampling(fit2, 
                      data = input.to.stan$data,
-                     init=input.to.stan$inits,
+                     init = input.to.stan$inits,
                      pars = input.to.stan$pars,
-                     iter=niters, thin=nthin,
-                     chains=nchains)
+                     iter = niters, 
+                     thin = nthin,
+                     chains = nchains)
 print(fit2keep)
 
 stan_out <- rstan::extract(fit2keep)
 theta <- rvsims(stan_out$theta)
-rvhist(theta, xlab="$\\theta$")
+rvhist(theta, xlab="$\\theta$", main="")
 quantile(stan_out$theta, prob=c(0.05,0.95))
 ```
 

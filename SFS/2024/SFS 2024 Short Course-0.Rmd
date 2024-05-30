@@ -1,11 +1,14 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: 
+output:
+  html_document:
+    df_print: paged
   pdf_document: default
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -14,18 +17,18 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The short course will provide a concise introduction to Bayesian applications in environmental and ecological studies, featuring examples and code from [Qian et al (2023)](https://github.com/songsqian/BeesRStan/). To facilitate practice, we will supply multiple Rmarkdown files. To ensure the best learning experience, it is recommended that you bring your own laptop to the workshop, with R and RStudio already installed. The workshop will have an informal atmosphere, allowing time for questions to be addressed as they arise. Instead of using a traditional PowerPoint presentation, we will guide you through the Rmarkdown files and provide explanations of the materials. Therefore, we kindly request that you make the necessary preparations. You can access all course materials, including data, code, and references, on [Github](https://github.com/songsqian/BeesRStan/), follow the link to [SFS](https://github.com/songsqian/BeesRStan/tree/main/SFS) for the Rmd files used in the short course.
+The short course will provide a concise introduction to Bayesian applications in environmental and ecological studies, featuring examples and code from [Qian et al (2022)](https://github.com/songsqian/BeesRStan/). To facilitate practice, we will supply multiple Rmarkdown files. To ensure the best learning experience, it is recommended that you bring your own laptop to the workshop, with R and RStudio already installed. The workshop will have an informal atmosphere, allowing time for questions to be addressed as they arise. Instead of using a traditional PowerPoint presentation, we will guide you through the Rmarkdown files and provide explanations of the materials. Therefore, we kindly request that you make the necessary preparations. You can access all course materials, including data, code, and references, on [Github](https://github.com/songsqian/BeesRStan/), follow the link to [SFS](https://github.com/songsqian/BeesRStan/tree/main/SFS) for the Rmd files used in the short course.
 
 Participants of the workshop can receive a 25% discount of the book by ordering the book at [the publisher's home page](https://www.routledge.com/Bayesian-Applications-in-Environmental-and-Ecological-Studies-with-R-and-Stan/Qian-DuFour-Alameddine/p/book/9781138497399), using code `SFS24`.
 
 ## Preparing R and RStan
-To ensure smooth compatibility and avoid version-specific issues, it is strongly recommended that you update both R and RStudio. The materials provided in the course were thoroughly tested with recent versions. The most recent version of R is 4.4.0, nicknamed "Puppy Cup," and RStudio version 2024.04.0+735, called "Chocolate Cosmos."
+To ensure smooth compatibility and avoid version-specific issues, it is strongly recommended that you update both R and RStudio. The materials provided in the course were thoroughly tested with recent versions: R 4.4.0, nicknamed "Puppy Cup," and RStudio version 2024.04.0+735, called "Chocolate Cosmos."
 
-Throughout the course, we will utilize Stan for all Bayesian computations, which can be accessed through the R package 'rstan'. It's important to note that using 'rstan' requires access to a C compiling toolchain. If you are a Windows user, please ensure that you also install 'Rtools'. The current recommended version is [Rtools44](https://cran.r-project.org/bin/windows/Rtools/rtools44/rtools.html).).
+Throughout the course, we will utilize Stan for all Bayesian computations, which can be accessed through the R package 'rstan'. It's important to note that using 'rstan' requires access to a C compiling toolchain. If you are a Windows user, please ensure that you also install 'Rtools'. The current recommended version is [Rtools44](https://cran.r-project.org/bin/windows/Rtools/rtools44/rtools.html)).
 
 For proper installation of 'rstan', please follow the instructions provided by the Stan developers:
 
-- Windows users using recent versions of R (4.3 and above) should be aware that the current version of 'RStan' available from CRAN is not compatible and may result in error messages. To resolve this, you need to install the preview of 'rstan' 2.26 by running the following commands:
+- Windows users using recent versions of R (4.3 and above) should be aware that the current version of 'RStan' available from CRAN is often not compatible (because of misaligned updating schedules between R and Stan) and may result in error messages. To resolve this, you need to install the preview of 'rstan' 2.26 by running the following commands:
 
 ```
 remove.packages(c("StanHeaders", "rstan"))
@@ -41,12 +44,12 @@ install.packages("rstan",
 
 ## Preparing your laptop
 
-To prepare for the short course, it is recommended that you create an empty folder on your laptop dedicated to this course. Then, download all the `.Rmd` and `.RData` files from the [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder. During the class, the data files will be accessed through the internet. However, if you anticipate not having internet access on-site, it is crucial that you download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **beforehand**. This ensures you have the necessary files readily available. In case of any unforeseen circumstances, I will also bring a copy of all essential files with me.
+To prepare for the short course, it is recommended that you create an empty folder on your laptop dedicated to this course. Then, download all the `.Rmd` and `.RData` files from the [course repository](https://github.com/songsqian/BeesRStan/tree/main/SFS) into this folder. During the class, the data files will be accessed through the internet. However, if you anticipate not having internet access on-site, it is crucial that you download and clone the [GitHub page](https://github.com/songsqian/BeesRStan/) onto your laptop **beforehand**. This ensures that you have the necessary files readily available. In case of any unforeseen circumstances, I will also bring a copy of all essential files with me.
 
 ### Installing package `rv`
 
 We use `rv` extensively for processing MCMC samples. Unfortunately, the author of `rv` does not actively maintain the package. As a result, it is often removed from R archive. You can still install it directly from [GitHub](https://jsta.github.io/rv/):
-```{R}
+```{R, eval=F}
 packages('devtools')  # package devtools needed
 devtools::install_github("jsta/rv")
 ```

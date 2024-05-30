@@ -1,10 +1,13 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -525,7 +528,7 @@ $$
 $$
 where $\mathbf{\beta}_j$ is the $j$th row of the regression coefficients for region $j$ (there are 9 regions each with 2 regression coefficients, intercept $\beta_0$ and slope $\beta_1$), 
 $$
-\mathbf{\gamma} = \begin{pmatrix} a_0 & b_0 \\ a_1 & b_1\\a_3&b_3 \\ a_4 & b_4 \end{pmatrix}
+\mathbf{\gamma} = \begin{pmatrix} a_0 & b_0 \\ a_1&b_1\\ a_2&b_2\\a_3&b_3 \end{pmatrix}
 $$ 
 is the group-level model coefficient matrix, and 
 $$

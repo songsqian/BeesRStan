@@ -1,10 +1,13 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
@@ -37,11 +40,11 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 ```
 ## Introduction
 
-Classical statistics, typically taught in universities, were largely based on Neyman-Pearson's "inductive behavior" approach, which turns an inductive inference problem to a deductive process.  According to Fisher (1922), the inductive nature of statistical inference (we observe data and which to infer the cause) should be approached using **hypothetical deduction**. That is, we propose a hypothesis and derive its logical outcome. Based on the hypothesis, we design an experiment with varied treatments and measure the effect. By comparing the observed results against the predicted (logical outcome) we conclude whether the data is consistent with the initial hypothesis.  The consistency is measured by the *p*-value, the smaller the *P*-value the less consistent is the data with the hypothesis. Under Fisher's hypothetical deduction approach, we propose one hypothesis and revise it when the resulting *p*-value is small.  Under the Neyman-Pearson's inductive behavior approach we compare the null and alternative hypotheses and decide which one to accept.  This approach is predicated on rejecting or failing to reject a hypothesis. In Neyman-Pearson's own words, there is no "hope of knowing whether each separate hypothesis is true or false." 
+Classical statistics, typically taught in universities, were largely based on Neyman-Pearson's "inductive behavior" approach, which turns an inductive inference problem to a deductive process.  According to Fisher (1922), the inductive nature of statistical inference (we observe data from which to infer the cause) should be approached using **hypothetical deduction**. That is, we propose a hypothesis and derive its logical outcome. Based on the hypothesis, we design an experiment with varied treatments and measure the effect. By comparing the observed results against the predicted (logical outcome) we conclude whether the data is consistent with the initial hypothesis.  The consistency is measured by the *p*-value, the smaller the *p*-value the less consistent is the data with the hypothesis. Under Fisher's hypothetical deduction approach, we propose one hypothesis and revise it when the resulting *p*-value is small.  Under the Neyman-Pearson's inductive behavior approach we compare the null and alternative hypotheses and decide which one to accept.  This approach is predicated on rejecting or failing to reject a hypothesis (the null hypothesis). In Neyman-Pearson's own words, there is no "hope of knowing whether each separate hypothesis is true or false."
 
 In ecological research, we are more interested in estimation.  For example, when using a *t*-test, we are not interested in whether the null hypothesis of no difference is true. It is always false (at least we believe so, otherwise we can't justify the grant behind the experiment). What we really want to know is the magnitude of the difference. Estimation is the main interest. Consequently, Fisher's hypothetical deduction approach and the Bayesian approach are more relevant to ecologists. 
 
-The Fisherian and the Bayesian approaches often lead to similar results in many simple problems.  Classical statisticians' emphasis on the accessibility of their methods to practitioners led to a vast collection of fast computation algorithms for a large number of statistical models.  As a result, using statistics is often as simple as pickinbg a model and plug data into a computer program (R functions).  At the same time, the computational difficulty of the Bayesian approach limited its use in only a few very simple situations.  As a result, Bayesian statistics is not taught in graduate schools.  With the advent of Markov chain Monte Carlo (MCMC) simulation methods, many computational problems associated with Bayesian statistics disappeared.  With MCMC, we can analyze problems that cannot be easily resolved using available classical statistics models.
+The Fisherian and the Bayesian approaches often lead to similar results in many simple problems.  Classical statisticians' emphasis on the accessibility of their methods to practitioners led to a vast collection of fast computation algorithms for a large number of statistical models.  As a result, using statistics is often as simple as picking a model and plug data into a computer program (e.r., an R function).  At the same time, the computational difficulty of the Bayesian approach limited its use in only a few very simple situations.  Given its limited use in practice and computational complexity, Bayesian statistics is rarely taught in graduate schools.  With the advent of Markov chain Monte Carlo (MCMC) simulation methods, many computational problems associated with Bayesian statistics disappeared.  With MCMC, we can analyze problems that cannot be easily resolved using available classical statistics models.
 
 ### The process of Statistical Inference 
 
@@ -54,6 +57,7 @@ According to Fisher (1922), statistical inference involves resolving three funda
 1. Problem of Distribution: This problem involves evaluating the model's fit and performance (quantify estimation uncertainty).
 
 ![](feeloop.png)
+
 ### A Mathematical Summary of the Problem of Estimation
 
 - Probability Distribution Density Function: The density function of the response variable, denoted as $\pi(y, \theta)$.
@@ -110,7 +114,6 @@ $$
 - The log posterior density
 
 $$L\pi(\theta\mid y,n) \propto (\alpha-1)\log(\theta)+(\beta-1)\log(1-\theta)+ y\log(p) +(n-y)\log(1-p)$$
-
 
 - Computational options:
   - Classical statistics: $\hat{p} = y/n$, because MLE is transformation invariant: $\hat{\theta}=\frac{\hat{p}-f_p}{1-(f_p+f_n)}$. 
@@ -272,7 +275,7 @@ model{
 We can also add a `transformed parameters` block to clarify the code:
 ```
 transformed parameters{
-   real<lower=0mupper=1> p_pos;
+   real<lower=0,upper=1> p_pos;
    p_pos = theta*(1-fn)+(1-theta)*fp;
 }
 model{
@@ -285,7 +288,7 @@ or directly use the log-probability function come with Stan:
 
 ```
 transformed parameters{
-   real<lower=0mupper=1> p_pos;
+   real<lower=0,upper=1> p_pos;
    p_pos = theta*(1-fn)+(1-theta)*fp;
 }
 model{

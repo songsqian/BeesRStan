@@ -1,12 +1,15 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
-  markdown: 
+  markdown:
     wrap: 72
 ---
 
@@ -40,41 +43,15 @@ nthin <- ceiling((niters/2)*nchains/nkeep)
 
 ### Example 3 --- Juvenile Atlantic Sturgeon Relative Abundance Index
 
-Statistical method -- Zero-inflated negative binomial with covariates
-and hierarchical structure
+Statistical method -- Zero-inflated negative binomial with covariates and hierarchical structure
 
-In this example we expand the zero-inflated negative binomial model by
-incorporating covariates to explain the difference between zero's (true
-and false), improving parameter identifiability. In addition, we
-incorporate a hierarchical structure assuming exchangeability across
-years to evaluate abundance through time.
+In this example we expand the zero-inflated negative binomial model by incorporating covariates to explain the difference between zero's (true and false), improving parameter identifiability. In addition, we incorporate a hierarchical structure assuming exchangeability across years to evaluate abundance through time.
 
 ### Background
 
-We were interested in the relative abundance of Hudson River juvenile
-Atlantic sturgeon through time (2004-2015) as an index of recruitment
-and population recovery. Young sturgeon reside in the brackish estuarine
-waters of the Hudson for several years before migrating back out to sea
-representing a consistently targetable portion of the population. A
-standardized gill net survey within a fixed portion of the river during
-spring months (March and April) was used to monitor abundance trends.
-Each monitoring event consisted of a count variable (i.e., number of
-fish captured) as well as an exposure variable (i.e., effort = fishing
-time \* net area). Additionally, environmental data (e.g., bottom
-temperature and salinity) and GPS location were recorded for each event.
+We were interested in the relative abundance of Hudson River juvenile Atlantic sturgeon through time (2004-2015) as an index of recruitment and population recovery. Young sturgeon reside in the brackish estuarine waters of the Hudson for several years before migrating back out to sea representing a consistently targetable portion of the population. A standardized gill net survey within a fixed portion of the river during spring months (March and April) was used to monitor abundance trends.  Each monitoring event consisted of a count variable (i.e., number of fish captured) as well as an exposure variable (i.e., effort = fishing time $\times$ net area). Additionally, environmental data (e.g., bottom temperature and salinity) and GPS location were recorded for each event.
 
-The sampling environment was dynamic, and likely influenced encounter
-and catch rates. For example, salinity levels fluctuated within the
-targeted sample area as the salt-front (interface between fresh and salt
-water) migrated up and down river depending on river conditions such as
-tidal stage, discharge, and wind intensity and direction. Also, the
-survey began in March as water temperatures were warming, and warming
-rates were inconsistent across years. As a result, low abundance and
-variable habitat conditions generated an over-dispersed count data set
-with a high proportion of 0's, while the source of zero-inflation
-remained unclear. Data were provided by the New York State Department of
-Environmental Conservation - Hudson and Delaware Marine Fisheries Unit
-(<https://www.dec.ny.gov/animals/6945.html>).
+The sampling environment was dynamic, and likely influenced encounter and catch rates. For example, salinity levels fluctuated within the targeted sample area as the salt-front (interface between fresh and salt water) migrated up and down river depending on river conditions such as tidal stage, discharge, and wind intensity and direction. Also, the survey began in March as water temperatures were warming, and warming rates were inconsistent across years. As a result, low abundance and variable habitat conditions generated an over-dispersed count data set with a high proportion of 0's, while the source of zero-inflation remained unclear. Data were provided by [the New York State Department of Environmental Conservation - Hudson and Delaware Marine Fisheries Unit](https://www.dec.ny.gov/animals/6945.html).
 
 ```{R sturgeon data, tidy=TRUE}
 ## Importing data
@@ -88,20 +65,10 @@ zipdata <- zipdata[order(zipdata$YEAR),]
 
 ### Incorporating covariates
 
-Building on the zero-inflated negative binomial model from Example 2, we
-first incorporated covariates into the zero and count portions. The
-natural link functions for the mean ($\mu$) and the probability of a
-true zero ($\theta$) were used. In the Stan code, we can either define
-the negative binomial mean (i.e., $\mu=e^{\boldsymbol{X}\beta}$, using
-Stan sampling function *neg_binomial_2_lpmf(mu, r)* or define the log
-mean, eta (i.e., $\eta=\log(\mu)$), using the sampling function
-*neg_binomial_2_log_lpmf(eta, r)*. Similarly, $\theta$ can be defined as
-zi (i.e., $zi=logit(\theta)$) on the logit scale using
-*bernoulli_logit_lpmf(1 \| zi)* for true zero and
-*bernoulli_logit_lpmf(0 \| zi)* for false zero.
+Building on the zero-inflated negative binomial model from Example 2, we first incorporated covariates into the zero and count portions. The natural link functions for the mean ($\mu$) and the probability of a true zero ($\theta$) were used. In the Stan code, we can either define the negative binomial mean (i.e., $\mu=e^{\boldsymbol{X}\beta}$, using Stan sampling function `neg_binomial_2_lpmf(mu, r)` or define the log mean, `eta` (i.e., $\eta=\log(\mu)$), using the sampling function `neg_binomial_2_log_lpmf(eta, r)`. Similarly, $\theta$ can be defined as `zi` (i.e., $zi=logit(\theta)$) on the logit scale using
+`bernoulli_logit_lpmf(1 \| zi)` for true zero and `bernoulli_logit_lpmf(0 \| zi)` for false zero.
 
-Following Lambert (1992) the negative binomial parameter $\mu$ and the
-binomial parameter $\theta$ are modeled as linear functions of
+Following Lambert (1992) the negative binomial parameter $\mu$ and the binomial parameter $\theta$ are modeled as linear functions of
 predictors through the respective link function: 
 $$
 \begin{array}{rcl}
@@ -114,11 +81,7 @@ In this example, we used temperature as a predictor ($Z$) for
 $logit(\theta)$, and temperature and distance to salt front ($X$; a
 metric derived form the sample location and predicted salt front
 location) for $log(\mu)$. Exploratory data analysis suggested the
-relationship between distance to salt front and catch was dome shaped,
-so we also included log(distance to salt front) as a predictor. All
-covariates were centered to aid model convergence. Finally, we added
-effort (i.e., fishing time \* net area) as an offset to represent CPUE
-rather than catch.
+relationship between distance to salt front and catch was dome shaped, so we also included log(distance to salt front) as a predictor. All covariates were centered to aid model convergence. Finally, we added effort (i.e., fishing time $\times$ net area) as an offset to represent CPUE rather than catch.
 
 The ZINB model with covariates is :
 
@@ -202,12 +165,11 @@ fit_zinb_sturg1 <- stan_model(model_code = zinb_sturg1)
 
 There are two major differences between this model and Example 2:\
 - $\theta$ is transformed to the logit scale $zi$ using the
-*bernoulli_logit_lpmf(y\|zi)* function in Stan\
+`bernoulli_logit_lpmf(y\|zi)` function in Stan\
 - linear predictor functions are added to the transformed parameters
-block for *eta* and *zi*
+block for `eta` and `zi`
 
-The next set of code packages the data, generates initial values, and
-runs the Stan model.
+The next set of code packages the data, generates initial values, and runs the Stan model.
 
 ```{R zinb_sturg1 input data and run, tidy=TRUE}
 ## bundle data, initial values, n.chains, and parameters to monitor
@@ -232,7 +194,9 @@ ZINB_in <- function(data=zipdata, n.chains=nchains){
                offset0=offsets[tmp], offsetP=offsets[!tmp]) #,
   inits <- list()
   for (i in 1:n.chains)
-    inits[[i]] <- list(alpha0=rnorm(1),alpha1=rnorm(1), b0=rnorm(1), beta=rnorm(Kbeta), r=(runif(1)))
+    inits[[i]] <- list(alpha0=rnorm(1),alpha1=rnorm(1),
+                       b0=rnorm(1), beta=rnorm(Kbeta), 
+                       r=(runif(1)))
   paras <- c("alpha0","alpha1","b0","beta","r") 
   return(list(data=data, init=inits, nchains=n.chains, para=paras ))
 }
@@ -240,11 +204,13 @@ ZINB_in <- function(data=zipdata, n.chains=nchains){
 input.to.stan <- ZINB_in()
 
 ## run model
-keep_zinb_sturg1 <- sampling(fit_zinb_sturg1, data=input.to.stan$data,
-                 init=input.to.stan$init,
-                 pars=input.to.stan$para,
-                 iter=niters,thin=nthin,
-                 chains=input.to.stan$nchain)
+keep_zinb_sturg1 <- sampling(fit_zinb_sturg1,
+                             data=input.to.stan$data,
+                             init=input.to.stan$init,
+                             pars=input.to.stan$para,
+                             iter=niters,
+                             thin=nthin,
+                             chains=input.to.stan$nchain)
 
 ##save(keep_zinb_sturg1,file="zinb_sturg1.RData")
 
@@ -255,18 +221,11 @@ pairs(keep_zinb_sturg1, pars = c("b0","beta","r"))
 
 ```
 
-The model runs quickly and does not produce any warnings. When we
-examine the pairs plot, there is strong correlation between the beta[1]
-and beta[2] parameters which we'd expect (part of gamma model), but no
-other concerning patterns (e.g., Neal's funnel) occurring. In the zero
-portion of the model, we still see banana shaped correlation patterns
-between r and alpha0 and alpha1 indicating convergence trouble. However,
-the pattern is not nearly as pronounced as we saw in Example 2
-suggesting the addition of covariates has helped.
+The model runs quickly and does not produce any warnings. When we examine the pairs plot, there is strong correlation between the beta[1] and beta[2] parameters which we'd expect (part of gamma model), but no other concerning patterns (e.g., Neal's funnel) occurring. In the zero portion of the model, we still see banana shaped correlation patterns between r and alpha0 and alpha1 indicating convergence trouble. However, the pattern is not nearly as pronounced as we saw in Example 2 suggesting the addition of covariates has helped.
 
 What have the covariates told us about the sturgeon catch data?
 
-```{R zinb_sturg1 covariate relationships, tidy=TRUE}
+```{R zinb_sturg1 covariate relationships, tidy=TRUE, dev="tikz"}
 
 ## extract MCMC draws and summarize parameters
 fitcoef <- rvsims(as.matrix(as.data.frame(
@@ -302,15 +261,21 @@ axis(1,at=c(1:16),labels=x.tmp)
  int <- substring(names(fitcoef), 1, 2)=="b0"
  bets <- fitcoef[substring(names(fitcoef), 1,4)=="beta"]
  dtsf <- zipdata$DTSF2
-tmp.c <- real_Intercept + bets[1]*x.tmp + bets[2]*mean(zipdata$DTSF2) + bets[3]*mean(log(zipdata$DTSF2)) + mean(log(zipdata$Effort))
+tmp.c <- real_Intercept + bets[1]*x.tmp +
+  bets[2]*mean(zipdata$DTSF2) + bets[3]*mean(log(zipdata$DTSF2)) +
+  mean(log(zipdata$Effort))
 plot(exp(tmp.c), xaxt="n",  pch=1, cex=0.5,
      xlab="Temperature ($^{\\circ}$C)", ylab="CPUE")
 
 x.dtsf <- seq(0.05,1.05,by=0.05)
-dtsf.c <- real_Intercept + bets[1]*mean(zipdata$TEMP) + bets[2]*x.dtsf + bets[3]*log(x.dtsf) + mean(log(zipdata$Effort))
+dtsf.c <- real_Intercept + bets[1]*mean(zipdata$TEMP) +
+  bets[2]*x.dtsf + bets[3]*log(x.dtsf) + 
+  mean(log(zipdata$Effort))
 plot(exp(dtsf.c), xaxt="n",  pch=1, cex=0.5,
      xlab="Distance to Salt Front (km)", ylab="CPUE")
-axis(1,at=c(1:21),labels=round(seq(min(zipdata$DTSF),max(zipdata$DTSF),length.out=21),0))
+axis(1,at=c(1:21),labels=round(seq(min(zipdata$DTSF),
+                                max(zipdata$DTSF),
+                                length.out=21),0))
 abline(v=9.5, lty=3, col=gray(0,0.5))
 text(9.5,1.5,"Salt-front",pos=2,srt=90)
 
@@ -318,15 +283,9 @@ text(9.5,1.5,"Salt-front",pos=2,srt=90)
 
 ```
 
-Probability of a true zero declines precipitously as water temperatures
-increase, likely due to increased fish movement and encounter rates with
-gill nets. CPUE increases with water temperature as fish move into the
-sample area, and the highest CPUE occurred when the sample area was in
-brackish waters below the salt front.
+Probability of a true zero declines precipitously as water temperatures increase, likely due to increased fish movement and encounter rates with gill nets. CPUE increases with water temperature as fish move into the sample area, and the highest CPUE occurred when the sample area was in brackish waters below the salt front.
 
-Ultimately, we were interested in evaluating the change in abundance
-over time. Next, we build on the current model by incorporating a year
-specific intercept.
+Ultimately, we were interested in evaluating the change in abundance over time. Next, we build on the current model by incorporating a year specific intercept.
 
 ```{R zinb sturg w covariates and hierarchy, tidy=TRUE}
 
@@ -412,15 +371,12 @@ fit_zinb_sturg2 <- stan_model(model_code = zinb_sturg2)
 
 ```
 
-There are two major differences from between fit_zinb_sturg2 and the
-fit_zinb_sturg1 models:\
-- The *b0* intercept in the positive count model is allowed to vary by
-year (*b0[year0[i]]* and *b0[yearP[i]]*)\
-- All *b0* now have a common mean (*mu_b*) and standard deviation
-(*tau_b*) prior
+There are two major differences from between `fit_zinb_sturg2` and the `fit_zinb_sturg1` models:\
+- The `b0` intercept in the positive count model is allowed to vary by year (`b0[year0[i]]` and `b0[yearP[i]]`)\
+- All `b0` now have a common mean (`mu_b`) and standard deviation
+(`tau_b`) prior
 
-The next set of code packages the data, generates initial values, and
-runs the Stan model.
+The next set of code packages the data, generates initial values, and runs the Stan model.
 
 ```{R zinb_sturg2 input data and run, tidy=TRUE}
 ## bundle data, initial values, n.chains, and parameters to monitor
@@ -470,15 +426,9 @@ pairs(keep_zinb_sturg2, pars = c("mu_b","tau_b","r"))
 pairs(keep_zinb_sturg2, pars = c("alpha0","alpha1","r"))
 ```
 
-The model runs quickly without producing any warnings. Looking over the
-pair plots, there are no concerning patterns in the upper level
-parameters. Correlations between *r* and the *b0* and *beta[1:12]* look
-good. However, the non-identifiability issue in the zero model
-parameters (*alpha0* and *alpha1*) remains.
+The model runs quickly without producing any warnings. Looking over the pair plots, there are no concerning patterns in the upper level parameters. Correlations between `r` and the `b0` and `beta[1:12]` look good. However, the non-identifiability issue in the zero model parameters (`alpha0` and `alpha1`) remains.
 
-Estimating year specific intercepts in the count model allows us to
-control for the covariates which influence survey performance, and
-estimate relative abundance under ideal sampling conditions.
+Estimating year specific intercepts in the count model allows us to control for the covariates which influence survey performance, and estimate relative abundance under ideal sampling conditions.
 
 ```{R zinb_sturg2 standardized index, tidy=TRUE}
 ## extract MCMC draws and summarize parameters
@@ -514,20 +464,8 @@ axis(1,at=c(1:12),labels=c(2004:2015))
 
 ```
 
-Using the count portion of the model, we estimated CPUE under two
-conditions: 1) always fishing at the survey mean temp, and 2) always
-fishing below the salt front where CPUE peaks. This yielded a
-standardized index with higher CPUE in general, and substantial
-increases in year like 2014 and 2015 that ether sampled during cool
-periods or primarily above the salt front.
+Using the count portion of the model, we estimated CPUE under two conditions: 1) always fishing at the survey mean temp, and 2) always fishing below the salt front where CPUE peaks. This yielded a standardized index with higher CPUE in general, and substantial increases in year like 2014 and 2015 that ether sampled during cool periods or primarily above the salt front.
 
 ### Summary
 
-This example expanded the zero-inflated negative binomial model by
-incorporating covariates and adding hierarchical structure (i.e., year
-specific intercepts). The addition of covariates improved parameter
-identifiability, but did not completely eliminate the issue. Had we
-understood this problem earlier, we likely would have fit the model
-using only a negative binomial distribution. Assuming exchangeability
-across year specific intercepts helped inform a management problem
-(i.e., Is the population growing?), making the model more useful.
+This example expanded the zero-inflated negative binomial model by incorporating covariates and adding hierarchical structure (i.e., year specific intercepts). The addition of covariates improved parameter identifiability, but did not completely eliminate the issue. Had we understood this problem earlier, we likely would have fit the model using only a negative binomial distribution. Assuming exchangeability across year specific intercepts helped inform a management problem (i.e., Is the population growing?), making the model more useful.

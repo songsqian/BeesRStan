@@ -1,19 +1,18 @@
 ---
-title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological Studies with R and Stan"
+title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
+  Studies with R and Stan"
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 urlcolor: blue
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 source("Front.R")
-packages(maptools)
-packages(maps)
-packages(mapproj)
-
 ```
 
 ## Introduction
@@ -45,7 +44,7 @@ plot(range(y.hat-2*sigma.hat, y.hat+2*sigma.hat),
      c(1,length(y.hat)), type="n",
      xlab="TP Threshold", ylab=" ", axes=F)
 axis(1, cex.axis=0.75)
-axis(2, at=1:length(y.hat), labels=metrics, las=1, cex.axis=0.75)
+axis(2, at=1:length(y.hat), labels=metricsTEX, las=1, cex.axis=0.75)
 segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
          y0=1:length(y.hat), y1=1:length(y.hat), lwd=3)#,
 #         col=c(1,1, 2,2,2,2,2, 3,3, 4, 4,4))
@@ -90,7 +89,7 @@ By defining $\theta_j$ as a transformed variable, we can improve the Stan model'
 ```{r everg stan, tidy=TRUE, message=F}
 everg_stan <- "
 data {
-  int<lower=0> J; // number of schools
+  int<lower=0> J; // number of metrics
   real y[J]; // estimated treatment effects
   real<lower=0> sigma[J]; // s.e. of effect estimates
 }
@@ -136,7 +135,6 @@ fit2keep <- sampling(fit1, data=input.to.stan$data,
                      iter=niters,thin=nthin,
                      chains=input.to.stan$chains,
                      control=list(max_treedepth=25))
-
 print(fit2keep)
 
 ```
@@ -148,15 +146,12 @@ everg_fit1 <- rvsims(as.matrix(
     as.data.frame(rstan::extract(fit2keep, permuted=T))))
 
 ## shrinkage effect
-everg_theta <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
-                                                             permuted=T,
-                                                             pars="theta"))))
+everg_theta <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,permuted=T,pars="theta"))))
 everg_mu <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
-                                                          permuted=T,
-                                                          pars="mu"))))
+permuted=T,pars="mu"))))
+
 everg_tau <- rvsims(as.matrix(as.data.frame(rstan::extract(fit2keep,
-                                                           permuted=T,
-                                                           pars="tau"))))
+permuted=T,pars="tau"))))
 theta <- summary(everg_theta)
 mu <- summary(everg_mu)
 tau <- summary(everg_tau)
@@ -166,7 +161,7 @@ plot(range(y.hat-1*sigma.hat, y.hat+1*sigma.hat),
      c(1,length(y.hat)), type="n",
      xlab="TP Threshold", ylab=" ", axes=F)
 axis(1, cex.axis=0.75)
-axis(2, at=seq(1,length(y.hat)), labels=metrics, las=1, cex.axis=0.75)
+axis(2, at=seq(1,length(y.hat)), labels=metricsTEX, las=1, cex.axis=0.75)
 segments(x0=y.hat+sigma.hat, x1=y.hat-sigma.hat,
          y0=seq(1,length(y.hat))-0.125,
          y1=seq(1,length(y.hat))-0.125,
@@ -189,8 +184,8 @@ Determining the TP (total phosphorus) concentration standard is primarily an eco
 ```{R everg env_crit, tidy=TRUE, fig.width=3.25, fig.height=3.5, dev="tikz"}
 ## mu versus N(mu, tau)
 mu_tau <- rvnorm(1, everg_mu, everg_tau)
-p1 <- hist(sims(everg_mu)[,1], freq=F)
-p2 <- hist(sims(mu_tau)[,1], nclass=35)
+p1 <- hist(sims(everg_mu)[,1], freq=F, xlab="$\\mu$", main="")
+p2 <- hist(sims(mu_tau)[,1], nclass=35, xlab="$\\tau$", main="")
 
 par(mar=c(3, 3, 1, 0.5), mgp=c(1.25,0.125,0), tck=0.01)
 plot(p1, col=rgb(0.1,0.1,.1,1/4),
