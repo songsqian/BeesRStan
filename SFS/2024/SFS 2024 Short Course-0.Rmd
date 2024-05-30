@@ -4,9 +4,9 @@ title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecol
 author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
-  pdf_document: default
 urlcolor: blue
 editor_options:
   chunk_output_type: console

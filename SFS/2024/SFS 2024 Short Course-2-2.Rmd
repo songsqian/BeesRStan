@@ -1,9 +1,10 @@
 ---
 title: "SFS 2024 Short Course -- Bayesian Applications in Environmental and Ecological
   Studies with R and Stan"
-author: "Song S. Qian and Mar R. DuFour"
+author: "Song S. Qian and Mark R. DuFour"
 date: "6/1/2024"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 urlcolor: blue
@@ -21,7 +22,7 @@ In this example, we introduce the concept of Bayesian posterior simulation for m
 
 Incidental Catch in Fisheries example (Hilborn and Mangel, 1997. *Ecological Detective*) aimed to determine the minimum sample size of "statistically meaningful data" required to estimate the mean bycatch rate with a limited level of uncertainty. The original study (Bartle, 1991) used Central Limit Theorem-based confidence intervals to define an acceptable level of uncertainty. The goal was to estimate the mean and variance of the bycatch numbers. Hilborn and Mangel (1997) utilized the negative binomial distribution to describe the bycatch data, where the response variable is the bycatch count, a count variable taking only non-negative integer values.
 
-Fisher et al. (1943) suggested that the Poisson distribution is one of three types of distributions for biological measurements, including the Poisson distribution for count data. 
+Fisher et al. (1943) suggested three types of distributions for biological measurements, including the Poisson distribution for count variables. 
 
 The Poisson distribution has one parameter ($\lambda$), representing the mean. The probability function is given by
 $$
